@@ -28,6 +28,7 @@ final class Settings {
 		'monthly_spend_cap'   => 50.00,
 		'auto_enrich'         => true,
 		'auto_pagespeed'      => true,
+		'pagespeed_per_minute' => 4,
 		'log_level'           => 'error',
 	];
 

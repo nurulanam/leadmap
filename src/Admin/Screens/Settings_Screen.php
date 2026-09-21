@@ -142,6 +142,16 @@ final class Settings_Screen {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="lm-psi-rate"><?php esc_html_e( 'PageSpeed requests per minute', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="pagespeed_per_minute" id="lm-psi-rate" class="small-text" min="1" max="60" step="1"
+								value="<?php echo esc_attr( (string) Settings::get( 'pagespeed_per_minute', 4 ) ); ?>" />
+							<p class="description">
+								<?php esc_html_e( 'Requests are spaced to stay under Google\'s limit. Leave at 4 when calling PageSpeed without a key. Once the PageSpeed Insights API is enabled on your Google Cloud project and added to your key, 20 or more is comfortable.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><?php esc_html_e( 'PageSpeed scores', 'leadmap' ); ?></th>
 						<td>
 							<label>
@@ -175,6 +185,7 @@ final class Settings_Screen {
 			'monthly_spend_cap'   => max( 0, (float) ( $_POST['monthly_spend_cap'] ?? 0 ) ),
 			'auto_enrich'         => ! empty( $_POST['auto_enrich'] ),
 			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
+			'pagespeed_per_minute' => max( 1, min( 60, absint( $_POST['pagespeed_per_minute'] ?? 4 ) ) ),
 		];
 
 		// An empty field means "keep the existing key", so we never clear it by accident.

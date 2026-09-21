@@ -15,6 +15,7 @@ use LeadMap\Enrich\Speed_Analyzer;
 use LeadMap\Leads\Lead_Repository;
 use LeadMap\Search\Search_Runner;
 use LeadMap\Support\Logger;
+use LeadMap\Support\Rate_Limiter;
 use LeadMap\Support\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -25,10 +26,13 @@ final class Job_Runner {
 	public const LEAD_ENRICH = 'leadmap/lead/enrich';
 	public const LEAD_SPEED  = 'leadmap/lead/speed';
 
+	/** Give up on a rate-limited measurement after this many backoffs. */
+	private const MAX_SPEED_ATTEMPTS = 5;
+
 	public function register(): void {
 		add_action( self::SEARCH_RUN, [ $this, 'run_search' ], 10, 1 );
 		add_action( self::LEAD_ENRICH, [ $this, 'run_enrich' ], 10, 1 );
-		add_action( self::LEAD_SPEED, [ $this, 'run_speed' ], 10, 2 );
+		add_action( self::LEAD_SPEED, [ $this, 'run_speed' ], 10, 3 );
 
 		// A newly collected lead enriches itself, unless the operator turned that off.
 		add_action( 'leadmap_lead_created', [ $this, 'on_lead_created' ], 10, 1 );
@@ -87,11 +91,18 @@ final class Job_Runner {
 		// Both strategies, like PageSpeed Insights itself. Mobile is what drives the
 		// staleness score, but desktop is what the owner sees on their own machine — and a
 		// large gap between the two is itself the argument.
-		Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, 'mobile' ] );
-		Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, 'desktop' ] );
+		Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, 'mobile', 0 ] );
+		Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, 'desktop', 0 ] );
 	}
 
-	public function run_speed( int $lead_id = 0, string $strategy = 'mobile' ): void {
+	/**
+	 * Measure one strategy for one lead.
+	 *
+	 * PageSpeed is the tightest budget we spend. Unauthenticated it allows only a handful of
+	 * requests per minute, and we ask for two per lead, so requests are spaced through a
+	 * shared slot queue and a refusal backs off rather than being recorded as a failure.
+	 */
+	public function run_speed( int $lead_id = 0, string $strategy = 'mobile', int $attempt = 0 ): void {
 		if ( $lead_id <= 0 ) {
 			return;
 		}
@@ -104,21 +115,66 @@ final class Job_Runner {
 			return;
 		}
 
-		$result = ( new Speed_Analyzer() )->analyze( (string) $lead->website, $strategy );
+		// Wait for a free slot rather than firing into a limit we know we would hit.
+		// Asking costs nothing; only the call itself claims the slot.
+		$rate = (float) Settings::get( 'pagespeed_per_minute', 4 );
+		$wait = Rate_Limiter::wait_for( 'pagespeed' );
 
-		if ( is_wp_error( $result ) ) {
-			Logger::error(
-				'PageSpeed measurement failed.',
-				[ 'lead' => $lead_id, 'strategy' => $strategy, 'error' => $result->get_error_message() ]
-			);
-
-			// Store the reason so the lead screen can explain the blank instead of showing
-			// nothing at all, which looks like the job never ran.
-			( new Enrichment_Service() )->record_speed_failure( $lead_id, $strategy, $result->get_error_message() );
+		if ( $wait > 0 ) {
+			Scheduler::enqueue_in( $wait, self::LEAD_SPEED, [ $lead_id, $strategy, $attempt ] );
 
 			return;
 		}
 
-		( new Enrichment_Service() )->apply_speed( $lead_id, $result, $strategy );
+		Rate_Limiter::consume( 'pagespeed', $rate );
+
+		$result = ( new Speed_Analyzer() )->analyze( (string) $lead->website, $strategy );
+
+		if ( ! is_wp_error( $result ) ) {
+			( new Enrichment_Service() )->apply_speed( $lead_id, $result, $strategy );
+
+			return;
+		}
+
+		// A rate-limit refusal is temporary. Back the whole queue off and try this lead again
+		// later, rather than marking it failed and losing the measurement for good.
+		if ( self::is_rate_limited( $result ) && $attempt < self::MAX_SPEED_ATTEMPTS ) {
+			$backoff = (int) min( 900, 60 * ( 2 ** $attempt ) );
+
+			Rate_Limiter::penalise( 'pagespeed', $backoff );
+			Scheduler::enqueue_in( $backoff, self::LEAD_SPEED, [ $lead_id, $strategy, $attempt + 1 ] );
+
+			Logger::info(
+				'PageSpeed rate limited; backing off.',
+				[ 'lead' => $lead_id, 'strategy' => $strategy, 'attempt' => $attempt, 'retry_in' => $backoff ]
+			);
+
+			return;
+		}
+
+		Logger::error(
+			'PageSpeed measurement failed.',
+			[ 'lead' => $lead_id, 'strategy' => $strategy, 'error' => $result->get_error_message() ]
+		);
+
+		// Store the reason so the lead screen can explain the blank instead of showing
+		// nothing at all, which looks like the job never ran.
+		( new Enrichment_Service() )->record_speed_failure( $lead_id, $strategy, $result->get_error_message() );
+	}
+
+	private static function is_rate_limited( \WP_Error $error ): bool {
+		if ( 'leadmap_http_429' === $error->get_error_code() ) {
+			return true;
+		}
+
+		$message = strtolower( $error->get_error_message() );
+
+		foreach ( [ 'rate limit', 'ratelimit', 'quota exceeded', 'too many requests' ] as $needle ) {
+			if ( str_contains( $message, $needle ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
