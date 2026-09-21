@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace LeadMap\Admin\Screens;
 
+use LeadMap\Enrich\Speed_Analyzer;
 use LeadMap\Providers\Google_Places_Provider;
 use LeadMap\Search\Search_Query;
 use LeadMap\Support\Encryption;
@@ -125,6 +126,35 @@ final class Settings_Screen {
 					</tr>
 				</table>
 
+				<h2><?php esc_html_e( 'Enrichment', 'leadmap' ); ?></h2>
+
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Automatic enrichment', 'leadmap' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="auto_enrich" value="1" <?php checked( (bool) Settings::get( 'auto_enrich', true ) ); ?> />
+								<?php esc_html_e( 'Crawl each new lead\'s website to find email addresses and check the site', 'leadmap' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( 'Turn this off to collect leads quickly and enrich a selection later from the Leads screen.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'PageSpeed scores', 'leadmap' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="auto_pagespeed" value="1" <?php checked( (bool) Settings::get( 'auto_pagespeed', true ) ); ?> />
+								<?php esc_html_e( 'Measure each reachable site with Google PageSpeed Insights (mobile and desktop)', 'leadmap' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( 'Free, but each site is measured twice — once as a phone, once as a desktop — and each run takes up to a minute, so both go through a separate background queue. Enable the PageSpeed Insights API on your Google Cloud project for a higher rate limit.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+
 				<?php submit_button( __( 'Save settings', 'leadmap' ), 'primary', 'leadmap_save' ); ?>
 			</form>
 		</div>
@@ -143,6 +173,8 @@ final class Settings_Screen {
 			'default_radius_m'    => max( 1000, min( 50000, absint( $_POST['default_radius_m'] ?? 5000 ) ) ),
 			'default_max_results' => max( 20, min( 300, absint( $_POST['default_max_results'] ?? 60 ) ) ),
 			'monthly_spend_cap'   => max( 0, (float) ( $_POST['monthly_spend_cap'] ?? 0 ) ),
+			'auto_enrich'         => ! empty( $_POST['auto_enrich'] ),
+			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
 		];
 
 		// An empty field means "keep the existing key", so we never clear it by accident.
@@ -208,8 +240,27 @@ final class Settings_Screen {
 				);
 		}
 
+		// PageSpeed is a separate API with its own enablement, and it is the one that most
+		// often fails silently, so the test covers it too.
+		$psi = ( new Speed_Analyzer() )->analyze( 'https://example.com/', 'mobile' );
+
+		if ( is_wp_error( $psi ) ) {
+			$failed  = true;
+			$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: failed.', 'leadmap' ) . '</strong> '
+				. esc_html( $psi->get_error_message() );
+		} else {
+			$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: working.', 'leadmap' ) . '</strong> '
+				. esc_html(
+					sprintf(
+						/* translators: %d: the test score returned for example.com. */
+						__( 'Test measurement returned a score of %d.', 'leadmap' ),
+						(int) ( $psi['score'] ?? 0 )
+					)
+				);
+		}
+
 		if ( ! $failed ) {
-			$lines[] = esc_html__( 'Both APIs are reachable. You are ready to run a search.', 'leadmap' );
+			$lines[] = esc_html__( 'All three APIs are reachable. You are ready to run a search.', 'leadmap' );
 		}
 
 		return implode( '<br />', $lines );

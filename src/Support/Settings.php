@@ -26,6 +26,8 @@ final class Settings {
 		'region_code'         => 'US',
 		'language_code'       => 'en',
 		'monthly_spend_cap'   => 50.00,
+		'auto_enrich'         => true,
+		'auto_pagespeed'      => true,
 		'log_level'           => 'error',
 	];
 

@@ -11,6 +11,7 @@ namespace LeadMap\Admin\Screens;
 
 use LeadMap\Admin\List_Tables\Leads_List_Table;
 use LeadMap\Events\Event_Repository;
+use LeadMap\Jobs\Job_Runner;
 use LeadMap\Leads\Lead_Repository;
 use LeadMap\Search\Search_Repository;
 
@@ -155,6 +156,14 @@ final class Leads_Screen {
 			$this->redirect( 'deleted', $deleted );
 		}
 
+		if ( 'enrich' === $action ) {
+			foreach ( $ids as $id ) {
+				Job_Runner::queue_enrich( $id );
+			}
+
+			$this->redirect( 'enriching', count( $ids ) );
+		}
+
 		if ( 'export' === $action ) {
 			$url = wp_nonce_url(
 				admin_url( 'admin-post.php?action=leadmap_export&ids=' . implode( ',', $ids ) ),
@@ -176,23 +185,29 @@ final class Leads_Screen {
 		$count = absint( $_GET['lm_count'] ?? 0 );
 		// phpcs:enable
 
-		if ( 'deleted' !== $what || ! $count ) {
+		if ( ! $count || ! in_array( $what, [ 'deleted', 'enriching' ], true ) ) {
 			return;
 		}
 
-		?>
-		<div class="notice notice-success is-dismissible">
-			<p>
-				<?php
-				printf(
-					/* translators: %d: number of leads deleted. */
-					esc_html( _n( '%d lead deleted.', '%d leads deleted.', $count, 'leadmap' ) ),
-					(int) $count
-				);
-				?>
-			</p>
-		</div>
-		<?php
+		$message = 'deleted' === $what
+			/* translators: %d: number of leads deleted. */
+			? sprintf( _n( '%d lead deleted.', '%d leads deleted.', $count, 'leadmap' ), $count )
+			/* translators: %d: number of leads queued for enrichment. */
+			: sprintf(
+				_n(
+					'%d lead queued for enrichment. Emails and site checks appear as each finishes.',
+					'%d leads queued for enrichment. Emails and site checks appear as each finishes.',
+					$count,
+					'leadmap'
+				),
+				$count
+			);
+
+		printf(
+			'<div class="notice notice-%s is-dismissible"><p>%s</p></div>',
+			'deleted' === $what ? 'success' : 'info',
+			esc_html( $message )
+		);
 	}
 
 	private function redirect( string $what, int $count ): void {

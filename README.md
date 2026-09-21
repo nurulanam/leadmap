@@ -1,22 +1,59 @@
-# LeadMap — Phase 1 (v0.1.0)
+# LeadMap — Phase 2 (v0.2.0)
 
 Collect local business leads from Google Maps by industry and ZIP, straight into WP Admin.
 
-Phase 1 covers **Search → Leads → Export**. Enrichment, triage, audit and outreach arrive in
-later phases; see `../DOCUMENTATION.md` for the full plan.
+Covers **Search → Enrich → Leads → Export**. Triage, audit and outreach arrive in later
+phases; see `../DOCUMENTATION.md` for the full plan.
 
 ## What works now
+
+**Phase 2 — enrichment**
+
+- Crawls each lead's website (home page plus up to four contact/about pages) and extracts
+  email addresses, ranked 0–100 by confidence
+- Fingerprints the platform and front-end stack, and flags dated markers (jQuery 1.x, Flash,
+  table layouts, old WordPress, dated site builders)
+- Checks on-page SEO: HTTPS, mobile viewport, title, description, H1, schema, canonical,
+  alt-text coverage, mixed content, footer copyright year
+- Measures Google PageSpeed Insights for **both mobile and desktop**, shown as PSI-style
+  gauges with Core Web Vitals and Google's own per-metric pass/fail colours
+- Rolls all of it into a **staleness score** (0–100) that sorts the most neglected sites first
+- Lead detail screen showing every email found, all signals, and the activity trail
+- Bulk "Enrich" action, or automatic enrichment on collection
+
+**Phase 1 — collection**
 
 - Search Google Places by industry + city/ZIP with a radius, run as a background job
 - Automatic pagination (20 per page) up to your result cap
 - Three-way deduplication: place id, normalized domain, E.164 phone
 - Leads list with search, filters (status, ZIP, category, has-email), sorting and bulk delete
-- CSV export of a selection or the whole database, streamed so large exports don't blow memory
+- CSV export of a selection or the whole database, streamed so large exports don't blow memory,
+  now including staleness, PageSpeed, SSL, mobile-ready and platform columns
 - Search history with live status, cost per search, re-run and delete
 - Encrypted API key storage with a connection test
 - Monthly spend cap that halts searches before the bill runs away
 
+## Build a release zip
+
+From the repository root:
+
+```bash
+./build.sh                # lint, test, then write dist/leadmap-<version>.zip
+./build.sh --dev          # include tests/ in the archive
+./build.sh --skip-tests   # package without running the suite
+```
+
+The script refuses to package a broken build: it lints every PHP file, runs the test suite,
+checks the plugin header version matches the `LEADMAP_VERSION` constant, rejects leftover
+debug output, and verifies the finished archive has exactly one top-level `leadmap/` folder
+with nothing outside it.
+
 ## Install
+
+**From a zip:** WordPress admin → Plugins → Add New → Upload Plugin → choose
+`dist/leadmap-<version>.zip`. Or `wp plugin install dist/leadmap-<version>.zip --force --activate`.
+
+**From source:**
 
 1. Copy the `leadmap` folder into `wp-content/plugins/`.
 2. Activate **LeadMap** in Plugins.
@@ -72,6 +109,42 @@ re-enqueues itself, so no request runs long and a stalled search resumes rather 
 If searches stay stuck on *Queued*, WP-Cron is probably disabled. Either install Action
 Scheduler or set up a real system cron hitting `wp-cron.php`.
 
+## Email discovery — what to expect
+
+No Google Maps source returns email addresses; the field does not exist in the API. Emails
+come from crawling the business's own website, which means:
+
+- **Expect a 35–60% hit rate** on small local businesses. Plan the funnel around that.
+- Leads with no email are still reachable by phone, and are marked so you can find them
+  manually.
+- Addresses are ranked: an address on the site's own domain found in a `mailto:` on the
+  contact page scores near 100; a Gmail address in a footer scores low because it is more
+  often the web designer's than the business's; a role account (`info@`, `sales@`) is usable
+  but ranked below a named person.
+
+The crawler is deliberately polite: honest user agent, `robots.txt` respected, one request per
+second per host, 2 MB response cap, 10s timeout, at most five pages per site.
+
+## Security
+
+The crawler fetches URLs that came from a third-party API, so it is a classic SSRF surface.
+`Support\Url_Guard` validates every request and every redirect hop:
+
+- Only `http`/`https`, only ports 80 and 443, no credentials in the URL, no control characters
+- Every IP the hostname resolves to (A **and** AAAA) must be publicly routable — one private
+  answer blocks the host, so a split-horizon name cannot slip through
+- Cloud metadata endpoints, RFC 1918, loopback, link-local, CGNAT and IPv4-mapped IPv6
+  are all blocked
+- Redirects are followed manually, at most three, with the full check repeated on each hop
+
+`tests/test-url-guard.php` holds 60 assertions covering these. They are the security contract
+of the crawler: if they start failing, it can be pointed at internal infrastructure.
+
+Residual risk: DNS rebinding. The name is resolved during validation and could resolve
+differently when the socket opens. Fully closing that needs connecting to a pinned IP with a
+forced Host header, which the WP HTTP API cannot express — it is the same exposure carried by
+core's own `wp_safe_remote_get()`.
+
 ## Data
 
 Four tables, all prefixed `{$wpdb->prefix}leadmap_`: `searches`, `leads`, `lead_emails`, `events`.
@@ -89,8 +162,17 @@ update_option( 'leadmap_delete_data_on_uninstall', 1 );
 ```
 
 Standalone — no WordPress or PHPUnit needed. Each file stubs the few WP functions its subject
-touches. Covers domain/phone normalization, key encryption, the query object and the Places
-response mapping.
+touches.
+
+| File | Covers |
+|---|---|
+| `test-url-guard.php` | SSRF defences (60 assertions) |
+| `test-email-extractor.php` | Email discovery, de-obfuscation, ranking |
+| `test-enrichment.php` | Tech fingerprinting, SEO checks, staleness, robots.txt |
+| `test-normalize.php` | Domain/phone normalization, encryption, query object |
+| `test-places-mapping.php` | Google Places response mapping |
+| `test-paging-body.php` | The paging contract with Google |
+| `test-error-messages.php` | Google error → actionable instruction mapping |
 
 ## Extending
 
@@ -102,5 +184,5 @@ add_action( 'leadmap_register_providers', function ( $registry ) {
 } );
 ```
 
-`leadmap_lead_created` fires with a lead id whenever a new business is stored — that is the
-hook Phase 2's enrichment will use.
+`leadmap_lead_created` fires with a lead id whenever a new business is stored; enrichment
+hangs off it. Enrichment jobs are `leadmap/lead/enrich` and `leadmap/lead/speed`.

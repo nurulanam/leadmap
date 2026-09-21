@@ -49,7 +49,10 @@ final class Http {
 	 */
 	public static function get_json( string $url, array $query = [], array $headers = [], int $timeout = 20 ): array|WP_Error {
 		if ( $query ) {
-			$url = add_query_arg( array_map( 'rawurlencode', array_map( 'strval', $query ) ), $url );
+			// add_query_arg() runs urlencode_deep() on the values itself. Pre-encoding here
+			// would double-encode, which silently breaks any value containing a URL — the
+			// PageSpeed "url" parameter above all.
+			$url = add_query_arg( array_map( 'strval', $query ), $url );
 		}
 
 		$response = wp_remote_get(

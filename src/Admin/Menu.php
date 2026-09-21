@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace LeadMap\Admin;
 
+use LeadMap\Admin\Screens\Lead_Detail_Screen;
 use LeadMap\Admin\Screens\Leads_Screen;
 use LeadMap\Admin\Screens\New_Search_Screen;
 use LeadMap\Admin\Screens\Searches_Screen;
@@ -34,6 +35,7 @@ final class Menu {
 			'leadmap-new-search' => new New_Search_Screen(),
 			'leadmap-searches'   => new Searches_Screen(),
 			'leadmap-settings'   => new Settings_Screen(),
+			'leadmap-lead'       => new Lead_Detail_Screen(),
 		];
 
 		add_menu_page(
@@ -50,6 +52,9 @@ final class Menu {
 		add_submenu_page( self::SLUG, __( 'New Search', 'leadmap' ), __( 'New Search', 'leadmap' ), 'leadmap_search', 'leadmap-new-search', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'Searches', 'leadmap' ), __( 'Searches', 'leadmap' ), 'leadmap_search', 'leadmap-searches', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'Settings', 'leadmap' ), __( 'Settings', 'leadmap' ), 'leadmap_settings', 'leadmap-settings', [ $this, 'render' ] );
+
+		// Reachable by URL from the leads list, but not shown as its own menu item.
+		add_submenu_page( '', __( 'Lead', 'leadmap' ), __( 'Lead', 'leadmap' ), 'leadmap_manage', 'leadmap-lead', [ $this, 'render' ] );
 
 		// The leads list table must build its columns before the screen renders.
 		$leads_hook = get_plugin_page_hookname( 'leadmap', self::SLUG );

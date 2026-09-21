@@ -42,6 +42,8 @@ final class Leads_List_Table extends WP_List_Table {
 			'website'   => __( 'Website', 'leadmap' ),
 			'location'  => __( 'Location', 'leadmap' ),
 			'rating'    => __( 'Rating', 'leadmap' ),
+			'speed'     => __( 'Speed', 'leadmap' ),
+			'staleness' => __( 'Staleness', 'leadmap' ),
 			'status'    => __( 'Status', 'leadmap' ),
 			'created_at' => __( 'Added', 'leadmap' ),
 		];
@@ -53,6 +55,7 @@ final class Leads_List_Table extends WP_List_Table {
 			'name'       => [ 'name', false ],
 			'rating'     => [ 'rating', false ],
 			'status'     => [ 'status', false ],
+			'staleness'  => [ 'staleness_score', false ],
 			'created_at' => [ 'created_at', true ],
 		];
 	}
@@ -60,6 +63,7 @@ final class Leads_List_Table extends WP_List_Table {
 	/** @return array<string,string> */
 	public function get_bulk_actions(): array {
 		return [
+			'enrich' => __( 'Enrich (find emails, check site)', 'leadmap' ),
 			'export' => __( 'Export to CSV', 'leadmap' ),
 			'delete' => __( 'Delete', 'leadmap' ),
 		];
@@ -127,8 +131,19 @@ final class Leads_List_Table extends WP_List_Table {
 			esc_html__( 'Delete', 'leadmap' )
 		);
 
+		$view = add_query_arg(
+			[ 'page' => 'leadmap-lead', 'lead' => (int) $item->id ],
+			admin_url( 'admin.php' )
+		);
+
+		$actions = array_merge(
+			[ 'view' => sprintf( '<a href="%s">%s</a>', esc_url( $view ), esc_html__( 'View', 'leadmap' ) ) ],
+			$actions
+		);
+
 		return sprintf(
-			'<strong>%s</strong>%s%s',
+			'<strong><a class="row-title" href="%s">%s</a></strong>%s%s',
+			esc_url( $view ),
 			esc_html( $name ),
 			$item->category ? '<br /><span class="leadmap-muted">' . esc_html( Normalize::humanize_type( (string) $item->category ) ) . '</span>' : '',
 			$this->row_actions( $actions )
@@ -185,6 +200,58 @@ final class Leads_List_Table extends WP_List_Table {
 			'%s <span class="leadmap-muted">(%d)</span>',
 			esc_html( number_format( (float) $item->rating, 1 ) ),
 			(int) $item->review_count
+		);
+	}
+
+	/** Mobile and desktop side by side, the way PageSpeed Insights reports them. */
+	public function column_speed( $item ): string {
+		$enrichment = json_decode( (string) $item->enrichment_json, true );
+
+		if ( ! is_array( $enrichment ) ) {
+			return '<span class="leadmap-muted">—</span>';
+		}
+
+		$parts = [];
+
+		foreach ( [ 'mobile' => __( 'M', 'leadmap' ), 'desktop' => __( 'D', 'leadmap' ) ] as $strategy => $abbr ) {
+			$score = $enrichment[ 'speed_' . $strategy ]['score'] ?? null;
+
+			if ( null === $score ) {
+				continue;
+			}
+
+			$score = (int) $score;
+			$band  = $score < 50 ? 'high' : ( $score < 90 ? 'mid' : 'low' );
+
+			$parts[] = sprintf(
+				'<span class="leadmap-speed leadmap-speed--%s" title="%s">%s<b>%d</b></span>',
+				esc_attr( $band ),
+				esc_attr( sprintf(
+					/* translators: 1: mobile or desktop, 2: the score. */
+					__( '%1$s: %2$d out of 100', 'leadmap' ),
+					ucfirst( $strategy ),
+					$score
+				) ),
+				esc_html( $abbr ),
+				$score
+			);
+		}
+
+		return $parts ? implode( ' ', $parts ) : '<span class="leadmap-muted">—</span>';
+	}
+
+	public function column_staleness( $item ): string {
+		if ( null === $item->staleness_score ) {
+			return '<span class="leadmap-muted">—</span>';
+		}
+
+		$score = (int) $item->staleness_score;
+		$band  = $score >= 60 ? 'high' : ( $score >= 30 ? 'mid' : 'low' );
+
+		return sprintf(
+			'<span class="leadmap-pill leadmap-pill--%s">%d</span>',
+			esc_attr( $band ),
+			$score
 		);
 	}
 

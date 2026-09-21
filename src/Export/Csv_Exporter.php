@@ -10,7 +10,6 @@ declare( strict_types=1 );
 namespace LeadMap\Export;
 
 use LeadMap\Install\Schema;
-use LeadMap\Leads\Lead_Repository;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -78,6 +77,12 @@ final class Csv_Exporter {
 			'Latitude',
 			'Longitude',
 			'Google Maps URL',
+			'Staleness Score',
+			'PageSpeed Mobile',
+			'PageSpeed Desktop',
+			'Has SSL',
+			'Mobile Ready',
+			'Platform',
 			'Status',
 			'Added (UTC)',
 		];
@@ -105,9 +110,41 @@ final class Csv_Exporter {
 			null === $lead->lat ? '' : (float) $lead->lat,
 			null === $lead->lng ? '' : (float) $lead->lng,
 			(string) $lead->maps_url,
+			null === $lead->staleness_score ? '' : (int) $lead->staleness_score,
+			$this->enrichment_value( $lead, [ 'speed_mobile', 'score' ] ),
+			$this->enrichment_value( $lead, [ 'speed_desktop', 'score' ] ),
+			$this->enrichment_bool( $lead, [ 'seo', 'is_https' ] ),
+			$this->enrichment_bool( $lead, [ 'seo', 'has_viewport' ] ),
+			$this->enrichment_value( $lead, [ 'tech', 'cms' ] ),
 			(string) $lead->status,
 			(string) $lead->created_at,
 		];
+	}
+
+	/** @param string[] $path */
+	private function enrichment_value( object $lead, array $path ): string {
+		$data = json_decode( (string) $lead->enrichment_json, true );
+
+		foreach ( $path as $key ) {
+			if ( ! is_array( $data ) || ! isset( $data[ $key ] ) ) {
+				return '';
+			}
+
+			$data = $data[ $key ];
+		}
+
+		return is_scalar( $data ) ? (string) $data : '';
+	}
+
+	/** @param string[] $path */
+	private function enrichment_bool( object $lead, array $path ): string {
+		$value = $this->enrichment_value( $lead, $path );
+
+		if ( '' === $value ) {
+			return '';
+		}
+
+		return $value && '0' !== $value ? 'yes' : 'no';
 	}
 
 	/**

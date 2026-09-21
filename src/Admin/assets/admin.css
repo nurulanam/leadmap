@@ -105,3 +105,278 @@
 .leadmap-form .required {
 	color: #d63638;
 }
+
+/* ---------- Phase 2: enrichment ---------- */
+
+/* Staleness pill in the list table */
+.leadmap-pill {
+	display: inline-block;
+	min-width: 30px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	font-size: 12px;
+	font-weight: 600;
+	text-align: center;
+}
+
+.leadmap-pill--high { background: #fbeaea; color: #8a1f11; }
+.leadmap-pill--mid  { background: #fcf3d8; color: #7a5a00; }
+.leadmap-pill--low  { background: #e3f3e5; color: #135e1e; }
+
+/* Lead detail layout */
+.leadmap-detail__grid {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+	gap: 16px;
+	align-items: start;
+	margin-top: 16px;
+}
+
+@media screen and (max-width: 960px) {
+	.leadmap-detail__grid { grid-template-columns: 1fr; }
+}
+
+.leadmap-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 14px 16px;
+	margin-bottom: 16px;
+}
+
+.leadmap-card h2 {
+	margin: 0 0 10px;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.leadmap-card table { border: 0; }
+.leadmap-card th { width: 40%; }
+
+/* Big score readout */
+.leadmap-score {
+	font-size: 34px;
+	font-weight: 700;
+	line-height: 1.1;
+	margin: 4px 0 8px;
+}
+
+.leadmap-score span {
+	font-size: 14px;
+	font-weight: 400;
+	color: #646970;
+}
+
+.leadmap-score--high { color: #8a1f11; }
+.leadmap-score--mid  { color: #7a5a00; }
+.leadmap-score--low  { color: #135e1e; }
+
+/* Staleness signal list */
+.leadmap-signals,
+.leadmap-checks,
+.leadmap-timeline {
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.leadmap-signals li {
+	display: flex;
+	gap: 8px;
+	padding: 4px 0;
+	border-top: 1px solid #f0f0f1;
+	font-size: 13px;
+}
+
+.leadmap-signal__weight {
+	flex: 0 0 34px;
+	font-weight: 600;
+	color: #8a1f11;
+}
+
+.leadmap-checks li {
+	padding: 3px 0;
+	font-size: 13px;
+}
+
+.leadmap-checks .is-ok span  { color: #135e1e; font-weight: 700; }
+.leadmap-checks .is-bad span { color: #8a1f11; font-weight: 700; }
+
+.leadmap-timeline li {
+	padding: 4px 0;
+	border-top: 1px solid #f0f0f1;
+	font-size: 12px;
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+/* Email confidence meter */
+.leadmap-meter {
+	display: inline-block;
+	vertical-align: middle;
+	width: 60px;
+	height: 6px;
+	border-radius: 3px;
+	background: #f0f0f1;
+	overflow: hidden;
+	margin-right: 6px;
+}
+
+.leadmap-meter span {
+	display: block;
+	height: 100%;
+	background: #2271b1;
+}
+
+/* ---------- PageSpeed, styled after Insights itself ---------- */
+
+.leadmap-psi {
+	display: flex;
+	gap: 18px;
+	justify-content: center;
+	margin: 6px 0 14px;
+}
+
+.leadmap-gauge {
+	text-align: center;
+	flex: 0 0 auto;
+}
+
+.leadmap-gauge__ring {
+	position: relative;
+	width: 92px;
+	height: 92px;
+	margin: 0 auto;
+}
+
+.leadmap-gauge__ring svg {
+	width: 100%;
+	height: 100%;
+	transform: rotate(-90deg); /* Start the arc at 12 o'clock. */
+}
+
+.leadmap-gauge__track {
+	fill: none;
+	stroke: #f0f0f1;
+	stroke-width: 8;
+}
+
+.leadmap-gauge__fill {
+	fill: none;
+	stroke-width: 8;
+	stroke-linecap: round;
+	transition: stroke-dashoffset .6s ease;
+}
+
+.leadmap-gauge__num {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 26px;
+	font-weight: 700;
+}
+
+.leadmap-gauge__label {
+	display: block;
+	margin-top: 4px;
+	font-size: 12px;
+	color: #646970;
+}
+
+/* PageSpeed's own thresholds: 0–49 red, 50–89 amber, 90+ green. */
+.leadmap-gauge__ring--high .leadmap-gauge__fill { stroke: #d93025; }
+.leadmap-gauge__ring--high .leadmap-gauge__num  { color: #d93025; }
+.leadmap-gauge__ring--mid  .leadmap-gauge__fill { stroke: #e37400; }
+.leadmap-gauge__ring--mid  .leadmap-gauge__num  { color: #e37400; }
+.leadmap-gauge__ring--low  .leadmap-gauge__fill { stroke: #0cce6b; }
+.leadmap-gauge__ring--low  .leadmap-gauge__num  { color: #0b8043; }
+
+.leadmap-gauge__ring--empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 8px solid #f0f0f1;
+	border-radius: 50%;
+	box-sizing: border-box;
+}
+
+.leadmap-gauge__ring--empty .leadmap-gauge__num {
+	position: static;
+	font-size: 20px;
+	color: #a7aaad;
+}
+
+/* Metric table */
+.leadmap-psi__label {
+	margin: 10px 0 4px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #646970;
+	text-transform: uppercase;
+	letter-spacing: .03em;
+}
+
+.leadmap-psi__metrics th {
+	width: 66%;
+	font-weight: 400;
+}
+
+.leadmap-psi__value {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+/* PSI marks each metric with a square (poor), triangle (average) or circle (good).
+   A shape as well as a colour keeps it readable without colour vision. */
+.leadmap-psi__dot {
+	display: inline-block;
+	width: 9px;
+	height: 9px;
+	margin-right: 7px;
+	vertical-align: baseline;
+}
+
+.leadmap-psi__dot--poor    { background: #d93025; }
+.leadmap-psi__dot--average { background: #e37400; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.leadmap-psi__dot--good    { background: #0cce6b; border-radius: 50%; }
+.leadmap-psi__dot--unknown { background: #dcdcde; border-radius: 50%; }
+
+.leadmap-psi__value--poor    { color: #d93025; }
+.leadmap-psi__value--average { color: #b06000; }
+.leadmap-psi__value--good    { color: #0b8043; }
+
+.leadmap-psi__note {
+	margin: 10px 0 0;
+	font-size: 12px;
+	color: #646970;
+}
+
+/* Compact mobile/desktop scores in the leads list */
+.leadmap-speed {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	padding: 1px 6px;
+	border-radius: 9px;
+	font-size: 11px;
+	background: #f0f0f1;
+	color: #646970;
+	white-space: nowrap;
+}
+
+.leadmap-speed b { font-size: 12px; }
+
+.leadmap-speed--high { background: #fce8e6; color: #a50e0e; }
+.leadmap-speed--mid  { background: #fef7e0; color: #a35b00; }
+.leadmap-speed--low  { background: #e6f4ea; color: #0b8043; }
+
+.leadmap-psi__error {
+	margin: 10px 0 0;
+	padding: 2px 10px;
+}
+
+.leadmap-psi__error p { font-size: 12px; }

@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
 final class Schema {
 
 	/** Bumped whenever a table definition below changes. */
-	public const DB_VERSION = 1;
+	public const DB_VERSION = 2;
 
 	public static function table( string $name ): string {
 		global $wpdb;
@@ -79,6 +79,7 @@ final class Schema {
 			maps_url VARCHAR(500) NOT NULL DEFAULT '',
 			status VARCHAR(30) NOT NULL DEFAULT 'new',
 			enrichment_json LONGTEXT NULL,
+			enriched_at DATETIME NULL,
 			staleness_score TINYINT UNSIGNED NULL,
 			staleness_json LONGTEXT NULL,
 			triage_verdict VARCHAR(30) NOT NULL DEFAULT '',
