@@ -1,0 +1,107 @@
+/* LeadMap admin styles. Built on core WP admin components — no framework. */
+
+.leadmap-wrap .leadmap-muted {
+	color: #646970;
+	font-size: 12px;
+}
+
+.leadmap-wrap .leadmap-nosite {
+	font-style: italic;
+}
+
+/* Stat tiles */
+.leadmap-tiles {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin: 16px 0;
+}
+
+.leadmap-tile {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 12px 18px;
+	min-width: 120px;
+}
+
+.leadmap-tile__value {
+	display: block;
+	font-size: 22px;
+	font-weight: 600;
+	line-height: 1.2;
+	color: #1d2327;
+}
+
+.leadmap-tile__label {
+	display: block;
+	font-size: 12px;
+	color: #646970;
+	margin-top: 2px;
+}
+
+/* Status pills */
+.leadmap-status {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.6;
+	background: #f0f0f1;
+	color: #3c434a;
+	white-space: nowrap;
+}
+
+.leadmap-status--new,
+.leadmap-status--queued { background: #e5f0fb; color: #0a4b78; }
+.leadmap-status--running,
+.leadmap-status--enriching { background: #fcf3d8; color: #7a5a00; }
+.leadmap-status--complete,
+.leadmap-status--enriched,
+.leadmap-status--triaged { background: #e3f3e5; color: #135e1e; }
+.leadmap-status--failed,
+.leadmap-status--bounced { background: #fbeaea; color: #8a1f11; }
+.leadmap-status--skipped,
+.leadmap-status--bad_fit { background: #f0f0f1; color: #646970; }
+.leadmap-status--replied,
+.leadmap-status--meeting_booked,
+.leadmap-status--won { background: #d7f0e0; color: #0a5d2f; }
+
+/* Cost estimate box on the search form */
+.leadmap-cost-box {
+	background: #fff;
+	border-left: 4px solid #2271b1;
+	padding: 10px 14px;
+	margin: 16px 0;
+	max-width: 640px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.leadmap-cost-box p {
+	margin: 4px 0 0;
+	color: #3c434a;
+}
+
+.leadmap-error {
+	color: #8a1f11;
+	font-size: 12px;
+	margin-top: 4px;
+	max-width: 320px;
+}
+
+.leadmap-running {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+}
+
+.leadmap-running .spinner {
+	float: none;
+	margin: 0;
+}
+
+.leadmap-form .required {
+	color: #d63638;
+}
