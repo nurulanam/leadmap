@@ -18,6 +18,7 @@ use LeadMap\Leads\Lead_Email_Repository;
 use LeadMap\Leads\Lead_Repository;
 use LeadMap\Support\Logger;
 use LeadMap\Support\Normalize;
+use LeadMap\Support\Settings;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -46,7 +47,10 @@ final class Enrichment_Service {
 			return $this->finish( $lead_id, [ 'no_website' => true ], [], 'no_website' );
 		}
 
-		$crawl = $this->crawler->crawl( $website );
+		$this->crawler->set_budget( (int) Settings::get( 'enrich_budget', 60 ) );
+
+		$started = microtime( true );
+		$crawl   = $this->crawler->crawl( $website );
 
 		if ( ! $crawl['pages'] ) {
 			$error = $crawl['error'];
@@ -72,7 +76,8 @@ final class Enrichment_Service {
 		$home        = $crawl['pages'][0]['result'];
 
 		$enrichment = [
-			'http' => [
+			'elapsed' => round( microtime( true ) - $started, 2 ),
+			'http'    => [
 				'status'     => $home->status,
 				'final_url'  => $home->final_url,
 				'redirects'  => $home->redirects,

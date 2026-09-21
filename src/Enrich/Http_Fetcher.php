@@ -12,6 +12,7 @@ declare( strict_types=1 );
 
 namespace LeadMap\Enrich;
 
+use LeadMap\Support\Settings;
 use LeadMap\Support\Url_Guard;
 use WP_Error;
 
@@ -22,6 +23,7 @@ final class Http_Fetcher {
 	/** Stop reading after this many bytes — a lead page is never legitimately larger. */
 	private const MAX_BYTES = 2097152; // 2 MB.
 
+	/** Fallback when no setting is available. */
 	private const TIMEOUT = 10;
 
 	private const MAX_REDIRECTS = 3;
@@ -32,7 +34,43 @@ final class Http_Fetcher {
 	/** @var array<string,float> host => last request time. */
 	private array $last_request = [];
 
+	/** Unix timestamp after which this fetcher refuses to start another request. */
+	private ?float $deadline = null;
+
+	public function __construct( private readonly ?int $timeout = null ) {}
+
+	/** Give the fetcher an overall budget, shared across every request it makes. */
+	public function set_deadline( float $timestamp ): void {
+		$this->deadline = $timestamp;
+	}
+
+	/** True when the budget is spent and no further request should be started. */
+	public function out_of_time(): bool {
+		return null !== $this->deadline && microtime( true ) >= $this->deadline;
+	}
+
+	/** Seconds left in the budget, capped to the per-request timeout. */
+	private function timeout(): int {
+		$timeout = $this->timeout ?? (int) Settings::get( 'crawl_timeout', self::TIMEOUT );
+		$timeout = max( 3, min( 60, $timeout ) );
+
+		if ( null === $this->deadline ) {
+			return $timeout;
+		}
+
+		$remaining = (int) floor( $this->deadline - microtime( true ) );
+
+		return max( 1, min( $timeout, $remaining ) );
+	}
+
 	public function fetch( string $url ): Fetch_Result|WP_Error {
+		if ( $this->out_of_time() ) {
+			return new WP_Error(
+				'leadmap_enrich_timeout',
+				__( 'The time budget for this lead ran out before the page could be fetched.', 'leadmap' )
+			);
+		}
+
 		$redirects = 0;
 		$original  = $url;
 
@@ -45,12 +83,17 @@ final class Http_Fetcher {
 
 			$this->throttle( (string) wp_parse_url( $safe, PHP_URL_HOST ) );
 
+			// The throttle may have eaten the remaining budget.
+			if ( $this->out_of_time() ) {
+				return new WP_Error( 'leadmap_enrich_timeout', __( 'The time budget for this lead ran out.', 'leadmap' ) );
+			}
+
 			$started = microtime( true );
 
 			$response = wp_safe_remote_get(
 				$safe,
 				[
-					'timeout'             => self::TIMEOUT,
+					'timeout'             => $this->timeout(),
 					'redirection'         => 0,      // Followed manually so each hop is validated.
 					'limit_response_size' => self::MAX_BYTES,
 					'sslverify'           => true,

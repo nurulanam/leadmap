@@ -57,6 +57,10 @@ final class Email_Extractor {
 			$this->add( $found, $email, 'json_ld', $site_domain, $page_kind );
 		}
 
+		foreach ( $this->from_cloudflare( $html ) as $email ) {
+			$this->add( $found, $email, 'cloudflare', $site_domain, $page_kind );
+		}
+
 		$text = $this->to_text( $html );
 
 		foreach ( $this->from_text( $text ) as $email ) {
@@ -120,10 +124,12 @@ final class Email_Extractor {
 		}
 
 		$score += match ( $candidate->source ) {
-			'mailto'     => 25,
-			'json_ld'    => 20,
-			'obfuscated' => 10,
-			default      => 0,
+			// A Cloudflare-protected address *is* a mailto link, just encoded, so it carries
+			// the same weight.
+			'mailto', 'cloudflare' => 25,
+			'json_ld'              => 20,
+			'obfuscated'           => 10,
+			default                => 0,
 		};
 
 		$score += match ( $page_kind ) {
@@ -195,6 +201,75 @@ final class Email_Extractor {
 		}
 
 		return $emails;
+	}
+
+	/**
+	 * Decode Cloudflare's email obfuscation.
+	 *
+	 * Cloudflare's "Email Address Obfuscation" is on by default on many plans, and it removes
+	 * the mailto: from the HTML entirely — replacing it with a hex blob that its own
+	 * JavaScript decodes in the browser. Without this, a large share of small business sites
+	 * look as though they publish no email at all.
+	 *
+	 * The encoding is a single-byte XOR: the first octet is the key, the rest is the address.
+	 *
+	 * @return string[]
+	 */
+	private function from_cloudflare( string $html ): array {
+		$hex = [];
+
+		// <a class="__cf_email__" data-cfemail="…">
+		if ( preg_match_all( '/data-cfemail\s*=\s*["\']([0-9a-f]+)["\']/i', $html, $m ) ) {
+			$hex = array_merge( $hex, $m[1] );
+		}
+
+		// <a href="/cdn-cgi/l/email-protection#…">
+		if ( preg_match_all( '#/cdn-cgi/l/email-protection\#([0-9a-f]+)#i', $html, $m ) ) {
+			$hex = array_merge( $hex, $m[1] );
+		}
+
+		$emails = [];
+
+		foreach ( array_unique( $hex ) as $encoded ) {
+			$decoded = self::decode_cfemail( (string) $encoded );
+
+			if ( '' !== $decoded ) {
+				$emails[] = $decoded;
+			}
+		}
+
+		return $emails;
+	}
+
+	/** Single-byte XOR, key first. Public so the behaviour can be asserted directly. */
+	public static function decode_cfemail( string $hex ): string {
+		// Two hex digits for the key plus at least a few for the address.
+		if ( strlen( $hex ) < 8 || 0 !== strlen( $hex ) % 2 || ! ctype_xdigit( $hex ) ) {
+			return '';
+		}
+
+		$bytes = @hex2bin( $hex ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+		if ( ! is_string( $bytes ) || strlen( $bytes ) < 4 ) {
+			return '';
+		}
+
+		$key   = ord( $bytes[0] );
+		$out   = '';
+		$count = strlen( $bytes );
+
+		for ( $i = 1; $i < $count; $i++ ) {
+			$char = ord( $bytes[ $i ] ) ^ $key;
+
+			// Anything outside printable ASCII means this was not an address.
+			if ( $char < 32 || $char > 126 ) {
+				return '';
+			}
+
+			$out .= chr( $char );
+		}
+
+		return $out;
 	}
 
 	/** @return string[] */

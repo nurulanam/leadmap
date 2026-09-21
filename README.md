@@ -111,10 +111,14 @@ Scheduler or set up a real system cron hitting `wp-cron.php`.
 
 ## Email discovery — what to expect
 
-No Google Maps source returns email addresses; the field does not exist in the API. Emails
-come from crawling the business's own website, which means:
+No Google Maps source returns email addresses; the field does not exist in the API. Emails come from crawling the business's own website, which means:
 
 - **Expect a 35–60% hit rate** on small local businesses. Plan the funnel around that.
+- **Cloudflare email obfuscation is decoded.** Cloudflare strips `mailto:` out of the HTML
+  entirely and leaves a hex blob its own JavaScript decodes in the browser. It is on by
+  default on many plans, so without handling it a large share of small business sites look as
+  though they publish no email at all. The encoding is a single-byte XOR and is decoded during
+  extraction.
 - Leads with no email are still reachable by phone, and are marked so you can find them
   manually.
 - Addresses are ranked: an address on the site's own domain found in a `mailto:` on the
@@ -122,8 +126,42 @@ come from crawling the business's own website, which means:
   often the web designer's than the business's; a role account (`info@`, `sales@`) is usable
   but ranked below a named person.
 
+### Finding the contact page
+
+Old sites are the target, and old sites have idiosyncratic URLs. Link matching squashes the
+href, link text, `title`, `alt` and `aria-label` down to bare alphanumerics before comparing,
+so one rule covers every shape of the same page:
+
+```
+/contact-us        /Contact_Us.aspx      /contactus.htm
+/contact.php       /contact%20us.html    /contac-tus.html
+/index.php?page=contact                  <a href="/p/9"><img alt="Contact Us"></a>
+```
+
+Query strings are searched as well as paths, because older sites often carry the page identity
+there. Non-English pages are covered too — `kontakt`, `contacto`, `contatti`, `contato`,
+`nous-contacter`, `impressum`, with accents folded. A short exclusion list keeps obvious traps
+out: an optician's `/contact-lenses` is not a contact page.
+
+When a site offers no recognisable link at all — an image-only nav, a JavaScript menu — the
+crawler falls back to trying a handful of common paths directly (`/contact`, `/contact.html`,
+`/contact-us.php` …), stopping at the first hit and skipping soft 404s that redirect home.
+
 The crawler is deliberately polite: honest user agent, `robots.txt` respected, one request per
-second per host, 2 MB response cap, 10s timeout, at most five pages per site.
+second per host, 2 MB response cap, at most five pages per site.
+
+## Timeouts
+
+Three settings bound how long a lead can take, so one unresponsive site never stalls the queue:
+
+| Setting | Default | What it does |
+|---|---|---|
+| Per-request timeout | 10s | How long to wait for a single page |
+| Time budget per lead | 60s | Total for the whole crawl. When it runs out the home page is kept and remaining contact pages are abandoned — a partial result beats a job that never ends |
+| Treat as stuck after | 15 min | An hourly watchdog rescues leads left in `Enriching` after a killed worker or PHP timeout |
+
+The watchdog retries a stalled lead once, then gives up and records why, so a site that accepts
+connections but never responds cannot consume jobs indefinitely.
 
 ## Security
 

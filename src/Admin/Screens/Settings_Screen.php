@@ -165,6 +165,44 @@ final class Settings_Screen {
 					</tr>
 				</table>
 
+				<h2><?php esc_html_e( 'Timeouts', 'leadmap' ); ?></h2>
+
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="lm-crawl-timeout"><?php esc_html_e( 'Per-request timeout', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="crawl_timeout" id="lm-crawl-timeout" class="small-text" min="3" max="60" step="1"
+								value="<?php echo esc_attr( (string) Settings::get( 'crawl_timeout', 10 ) ); ?>" />
+							<span><?php esc_html_e( 'seconds', 'leadmap' ); ?></span>
+							<p class="description">
+								<?php esc_html_e( 'How long to wait for a single page. Raise it if slow sites are being missed; lower it to get through a large search faster.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="lm-enrich-budget"><?php esc_html_e( 'Time budget per lead', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="enrich_budget" id="lm-enrich-budget" class="small-text" min="10" max="300" step="5"
+								value="<?php echo esc_attr( (string) Settings::get( 'enrich_budget', 60 ) ); ?>" />
+							<span><?php esc_html_e( 'seconds', 'leadmap' ); ?></span>
+							<p class="description">
+								<?php esc_html_e( 'Total time for one lead\'s whole crawl. When it runs out, the home page is kept and the remaining contact pages are abandoned — a partial result beats a job that never ends.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="lm-stuck"><?php esc_html_e( 'Treat as stuck after', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="stuck_after_minutes" id="lm-stuck" class="small-text" min="5" max="1440" step="5"
+								value="<?php echo esc_attr( (string) Settings::get( 'stuck_after_minutes', 15 ) ); ?>" />
+							<span><?php esc_html_e( 'minutes', 'leadmap' ); ?></span>
+							<p class="description">
+								<?php esc_html_e( 'An hourly sweep rescues leads left sitting in "Enriching" — after a killed worker or a PHP timeout. The first stall is retried once; a second gives up and records why.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+
 				<?php submit_button( __( 'Save settings', 'leadmap' ), 'primary', 'leadmap_save' ); ?>
 			</form>
 		</div>
@@ -186,6 +224,9 @@ final class Settings_Screen {
 			'auto_enrich'         => ! empty( $_POST['auto_enrich'] ),
 			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
 			'pagespeed_per_minute' => max( 1, min( 60, absint( $_POST['pagespeed_per_minute'] ?? 4 ) ) ),
+			'crawl_timeout'       => max( 3, min( 60, absint( $_POST['crawl_timeout'] ?? 10 ) ) ),
+			'enrich_budget'       => max( 10, min( 300, absint( $_POST['enrich_budget'] ?? 60 ) ) ),
+			'stuck_after_minutes' => max( 5, min( 1440, absint( $_POST['stuck_after_minutes'] ?? 15 ) ) ),
 		];
 
 		// An empty field means "keep the existing key", so we never clear it by accident.

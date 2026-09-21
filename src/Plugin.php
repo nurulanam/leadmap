@@ -14,6 +14,7 @@ use LeadMap\Admin\Notices;
 use LeadMap\Export\Csv_Exporter;
 use LeadMap\Install\Installer;
 use LeadMap\Jobs\Job_Runner;
+use LeadMap\Jobs\Watchdog;
 use LeadMap\Providers\Provider_Registry;
 
 defined( 'ABSPATH' ) || exit;
@@ -48,6 +49,7 @@ final class Plugin {
 		add_action( 'init', [ Installer::class, 'maybe_upgrade' ] );
 
 		( new Job_Runner() )->register();
+		( new Watchdog() )->register();
 		( new Csv_Exporter() )->register();
 
 		if ( is_admin() ) {

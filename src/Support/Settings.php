@@ -29,6 +29,9 @@ final class Settings {
 		'auto_enrich'         => true,
 		'auto_pagespeed'      => true,
 		'pagespeed_per_minute' => 4,
+		'crawl_timeout'       => 10,
+		'enrich_budget'       => 60,
+		'stuck_after_minutes' => 15,
 		'log_level'           => 'error',
 	];
 

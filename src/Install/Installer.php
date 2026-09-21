@@ -34,6 +34,8 @@ final class Installer {
 
 	public static function deactivate(): void {
 		wp_clear_scheduled_hook( 'leadmap/search/run' );
+
+		\LeadMap\Jobs\Watchdog::unschedule();
 	}
 
 	public static function add_caps(): void {

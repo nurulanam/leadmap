@@ -56,6 +56,43 @@ $r = $x->extract('<script type="application/ld+json">{"@type":"Dentist","email":
 check('found in schema', $emails($r), ['hello@acmedental.com']);
 check('source',          $r['hello@acmedental.com']->source, 'json_ld');
 
+echo "\n== Cloudflare email obfuscation ==\n";
+// Cloudflare strips mailto: out of the HTML and leaves a hex blob its own JavaScript
+// decodes. On by default for many plans, so without this a large share of small business
+// sites look as though they publish no email at all. Single-byte XOR, key first.
+$cf = fn(string $email, int $key = 0x28) => bin2hex(chr($key) .
+      implode('', array_map(fn($c) => chr(ord($c) ^ $key), str_split($email))));
+
+$blob = $cf('orchardplumbingandheating@yahoo.com');
+check('decoder round-trips', Email_Extractor::decode_cfemail($blob), 'orchardplumbingandheating@yahoo.com');
+
+$r = $x->extract('<a href="/cdn-cgi/l/email-protection#' . $blob . '" class="g11">
+  <span class="__cf_email__" data-cfemail="' . $blob . '">[email&#160;protected]</span></a>',
+  'orchardplumbingandheating.info', 'contact');
+check('extracted from markup', $emails($r), ['orchardplumbingandheating@yahoo.com']);
+check('source recorded',       $r['orchardplumbingandheating@yahoo.com']->source, 'cloudflare');
+check('scored like a mailto',  $r['orchardplumbingandheating@yahoo.com']->confidence, 85);
+
+check('href form alone', $emails($x->extract(
+  '<a href="/cdn-cgi/l/email-protection#' . $cf('info@acme.com', 0x3f) . '">Email</a>',
+  'acme.com', 'contact')), ['info@acme.com']);
+
+check('different XOR key', Email_Extractor::decode_cfemail($cf('bob@acme.com', 0x7a)), 'bob@acme.com');
+check('key 0x00',          Email_Extractor::decode_cfemail($cf('bob@acme.com', 0x00)), 'bob@acme.com');
+
+echo "\n== malformed Cloudflare blobs are rejected, not guessed at ==\n";
+foreach ([
+  'too short'      => 'ab',
+  'odd length'     => 'abc',
+  'not hex'        => 'zzzzzzzz',
+  'empty'          => '',
+  'decodes to junk'=> bin2hex("\x05\x01\x02\x03\x04"),
+] as $label => $bad) {
+  check('rejects ' . $label, Email_Extractor::decode_cfemail($bad), '');
+}
+check('junk blob yields no email', $emails($x->extract(
+  '<span data-cfemail="deadbeefdeadbeef">x</span>', 'acme.com', 'home')), []);
+
 echo "\n== junk must never become a lead ==\n";
 foreach ([
   'image filename'   => '<img src="logo@2x.png">',
