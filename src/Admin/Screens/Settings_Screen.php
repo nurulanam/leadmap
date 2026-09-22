@@ -115,6 +115,16 @@ final class Settings_Screen {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="lm-search-cap"><?php esc_html_e( 'Spend limit per search (USD)', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="max_cost_per_search" id="lm-search-cap" class="small-text" min="0" step="0.05"
+								value="<?php echo esc_attr( (string) Settings::get( 'max_cost_per_search', 0.50 ) ); ?>" />
+							<p class="description">
+								<?php esc_html_e( 'A single search stops once it has spent this much, whatever else it is doing. Set 0 to disable. A normal search costs about $0.11.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="lm-cap"><?php esc_html_e( 'Monthly spend cap (USD)', 'leadmap' ); ?></label></th>
 						<td>
 							<input type="number" name="monthly_spend_cap" id="lm-cap" class="small-text" min="0" step="1"
@@ -221,6 +231,7 @@ final class Settings_Screen {
 			'default_radius_m'    => max( 1000, min( 50000, absint( $_POST['default_radius_m'] ?? 5000 ) ) ),
 			'default_max_results' => max( 20, min( 300, absint( $_POST['default_max_results'] ?? 60 ) ) ),
 			'monthly_spend_cap'   => max( 0, (float) ( $_POST['monthly_spend_cap'] ?? 0 ) ),
+			'max_cost_per_search' => max( 0, (float) ( $_POST['max_cost_per_search'] ?? 0 ) ),
 			'auto_enrich'         => ! empty( $_POST['auto_enrich'] ),
 			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
 			'pagespeed_per_minute' => max( 1, min( 60, absint( $_POST['pagespeed_per_minute'] ?? 4 ) ) ),

@@ -380,3 +380,308 @@
 }
 
 .leadmap-psi__error p { font-size: 12px; }
+
+/* ---------- New Search: form beside the area preview ---------- */
+
+.leadmap-search-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+	gap: 24px;
+	align-items: start;
+}
+
+@media screen and (max-width: 1100px) {
+	.leadmap-search-layout { grid-template-columns: 1fr; }
+}
+
+.leadmap-map-panel {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 14px 16px;
+	position: sticky;
+	top: 46px;
+}
+
+.leadmap-map-panel h2 {
+	margin: 0 0 10px;
+	font-size: 14px;
+}
+
+.leadmap-map {
+	height: 320px;
+	border-radius: 4px;
+	background: #f0f0f1;
+	z-index: 0; /* Keep tiles under the WP admin menu. */
+}
+
+.leadmap-map__status {
+	margin: 8px 0 4px;
+	font-size: 13px;
+	min-height: 20px;
+	color: #646970;
+}
+
+.leadmap-map__status.is-ok    { color: #135e1e; font-weight: 600; }
+.leadmap-map__status.is-error { color: #8a1f11; }
+.leadmap-map__status.is-busy::after {
+	content: '';
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-left: 6px;
+	border: 2px solid #c3c4c7;
+	border-top-color: #2271b1;
+	border-radius: 50%;
+	animation: leadmap-spin .8s linear infinite;
+	vertical-align: -1px;
+}
+
+@keyframes leadmap-spin { to { transform: rotate( 360deg ); } }
+
+/* ---------- Modal shell ---------- */
+
+body.leadmap-modal-open { overflow: hidden; }
+
+.leadmap-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 160000; /* Above the WP admin bar and menu. */
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+
+.leadmap-modal__backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba( 0, 0, 0, .65 );
+}
+
+.leadmap-modal__box {
+	position: relative;
+	width: min( 820px, 100% );
+	max-height: min( 720px, 92vh );
+	display: flex;
+	flex-direction: column;
+	background: #fff;
+	border-radius: 6px;
+	box-shadow: 0 12px 40px rgba( 0, 0, 0, .35 );
+	overflow: hidden;
+	animation: leadmap-modal-in .18s ease-out;
+}
+
+@keyframes leadmap-modal-in {
+	from { opacity: 0; transform: translateY( 12px ); }
+	to   { opacity: 1; transform: none; }
+}
+
+.leadmap-modal__box .leadmap-live {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	flex: 1;
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	padding: 0;
+	max-width: none;
+}
+
+.leadmap-modal__head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 14px 18px;
+	border-bottom: 1px solid #dcdcde;
+	flex: 0 0 auto;
+}
+
+.leadmap-modal__titles {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.leadmap-modal__titles .leadmap-live__title { margin: 0; }
+
+.leadmap-modal__close {
+	margin-left: auto;
+	font-size: 26px;
+	line-height: 1;
+	color: #646970;
+	text-decoration: none;
+	padding: 0 4px;
+	flex: 0 0 auto;
+}
+
+.leadmap-modal__close:hover,
+.leadmap-modal__close:focus { color: #1d2327; }
+
+.leadmap-modal__body {
+	padding: 14px 18px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	flex: 1;
+}
+
+/* The log takes whatever height is left, rather than a fixed box. */
+.leadmap-modal__body .leadmap-live__log {
+	flex: 1;
+	max-height: none;
+	min-height: 220px;
+}
+
+.leadmap-live__hint {
+	margin: 10px 0 0;
+	font-size: 12px;
+	color: #646970;
+}
+
+.leadmap-modal__foot {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 18px;
+	border-top: 1px solid #dcdcde;
+	background: #f6f7f7;
+	flex: 0 0 auto;
+}
+
+.leadmap-modal__foot .leadmap-live__done { margin: 0; }
+
+/* When the search has finished the Stop button is hidden, so Close needs the push. */
+.leadmap-modal__foot .leadmap-live__stop[hidden] ~ .button { margin-left: auto; }
+
+@media screen and ( max-width: 600px ) {
+	.leadmap-modal { padding: 0; }
+	.leadmap-modal__box { max-height: 100vh; height: 100vh; border-radius: 0; }
+}
+
+@media ( prefers-reduced-motion: reduce ) {
+	.leadmap-modal__box { animation: none; }
+}
+
+/* ---------- Live search console ---------- */
+
+.leadmap-live {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-left: 4px solid #2271b1;
+	border-radius: 4px;
+	padding: 14px 16px;
+	margin: 16px 0;
+	max-width: 900px;
+}
+
+.leadmap-live.is-failed { border-left-color: #d63638; }
+.leadmap-live:not(.is-running):not(.is-failed) { border-left-color: #00a32a; }
+
+.leadmap-live__head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 10px;
+}
+
+.leadmap-live__state { font-size: 14px; }
+
+.leadmap-live__title {
+	color: #646970;
+	font-size: 13px;
+	margin-left: auto;
+}
+
+.leadmap-live__spinner {
+	width: 14px;
+	height: 14px;
+	border: 2px solid #dcdcde;
+	border-top-color: #2271b1;
+	border-radius: 50%;
+	flex: 0 0 auto;
+}
+
+.leadmap-live.is-running .leadmap-live__spinner {
+	animation: leadmap-spin .8s linear infinite;
+}
+
+.leadmap-live:not(.is-running) .leadmap-live__spinner {
+	border-color: #00a32a;
+}
+
+.leadmap-live.is-failed .leadmap-live__spinner {
+	border-color: #d63638;
+}
+
+.leadmap-live__bar {
+	height: 6px;
+	background: #f0f0f1;
+	border-radius: 3px;
+	overflow: hidden;
+}
+
+.leadmap-live__bar span {
+	display: block;
+	height: 100%;
+	background: #2271b1;
+	transition: width .5s ease;
+}
+
+.leadmap-live__bar.is-done span { background: #00a32a; }
+.leadmap-live.is-failed .leadmap-live__bar span { background: #d63638; }
+
+.leadmap-live__stats {
+	margin: 8px 0 10px;
+	font-size: 13px;
+	color: #3c434a;
+}
+
+/* The console itself */
+.leadmap-live__log {
+	max-height: 230px;
+	overflow-y: auto;
+	background: #1d2327;
+	border-radius: 4px;
+	padding: 10px 12px;
+	font-family: Menlo, Consolas, monaco, monospace;
+	font-size: 12px;
+	line-height: 1.7;
+	color: #dcdcde;
+}
+
+.leadmap-live__line {
+	display: flex;
+	gap: 10px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.leadmap-live__time {
+	flex: 0 0 auto;
+	color: #8c8f94;
+}
+
+.leadmap-live__line.is-good  { color: #68de87; }
+.leadmap-live__line.is-warn  { color: #f0c33c; }
+.leadmap-live__line.is-error { color: #ff8085; }
+
+.leadmap-live__done { margin: 12px 0 0; display: flex; gap: 8px; }
+
+@media ( prefers-reduced-motion: reduce ) {
+	.leadmap-live__spinner,
+	.leadmap-map__status.is-busy::after { animation: none; }
+	.leadmap-live__bar span { transition: none; }
+}
+
+/* A stopped search is neither success nor failure */
+.leadmap-live.is-stopped { border-left-color: #dba617; }
+.leadmap-live.is-stopped .leadmap-live__spinner { border-color: #dba617; }
+.leadmap-live.is-stopped .leadmap-live__bar span { background: #dba617; }
+
+.leadmap-status--cancelled { background: #fcf3d8; color: #7a5a00; }
+
+/* Stop sits hard right, with Close beside it. */
+.leadmap-live__stop { margin-left: auto; }

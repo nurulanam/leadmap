@@ -1,4 +1,4 @@
-# LeadMap — Phase 2 (v0.2.0)
+# LeadMap — Phase 2 (v0.3.0)
 
 Collect local business leads from Google Maps by industry and ZIP, straight into WP Admin.
 
@@ -21,10 +21,19 @@ phases; see `../DOCUMENTATION.md` for the full plan.
 - Lead detail screen showing every email found, all signals, and the activity trail
 - Bulk "Enrich" action, or automatic enrichment on collection
 
+**Search experience**
+
+- **Live area map** on the New Search screen — type a city or ZIP and the map draws the exact
+  radius being searched, before any money is spent
+- **Live search console** — a running search streams what it is doing (locating, fetching
+  page 2, 19 found / 12 new, finished) instead of sitting still for a minute
+
 **Phase 1 — collection**
 
 - Search Google Places by industry + city/ZIP with a radius, run as a background job
-- Automatic pagination (20 per page) up to your result cap
+- Automatic pagination (20 per page) with hard stops so a search can never run away:
+  it halts on the first empty page, after 3 pages of nothing new, at the page budget implied
+  by your result cap, and at a per-search spend limit — and says which one stopped it
 - Three-way deduplication: place id, normalized domain, E.164 phone
 - Leads list with search, filters (status, ZIP, category, has-email), sorting and bulk delete
 - CSV export of a selection or the whole database, streamed so large exports don't blow memory,
@@ -97,8 +106,13 @@ per-lead cost.
 
 Geocoding (one call per search, to resolve the ZIP) has its own 10,000 free calls per month.
 
-Two guards: the plugin's monthly spend cap in Settings, and — more importantly — a hard daily
-quota cap set in Google Cloud under *APIs & Services → Quotas*.
+Three guards: a **per-search spend limit** (default $0.50), a **monthly spend cap**, and — most
+importantly — a hard daily quota cap set in Google Cloud under *APIs & Services → Quotas*.
+
+The per-search limit matters because Google will keep issuing page tokens after it has run out
+of businesses. Paging on a result cap alone is not safe: if no new results arrive, the cap is
+never reached and the search pages forever. A search with no results now costs at most about
+$0.04 before it stops.
 
 ## Background jobs
 
@@ -162,6 +176,17 @@ Three settings bound how long a lead can take, so one unresponsive site never st
 
 The watchdog retries a stalled lead once, then gives up and records why, so a site that accepts
 connections but never responds cannot consume jobs indefinitely.
+
+## The map
+
+Leaflet and OpenStreetMap, bundled in `src/Admin/assets/vendor/leaflet` (BSD-2). Deliberately
+**not** Google Maps JavaScript: the Google key is restricted to this server's IP address, which
+is correct for server-side use but means it cannot be used from a browser at all. Google Maps JS
+would need a second, referrer-restricted key and would cost per map load. Leaflet needs no key
+and costs nothing.
+
+Geocoding for the preview is proxied through `leadmap/v1/geocode`, so the key stays server-side.
+Results are cached for a week, because the map is queried on every pause in typing.
 
 ## Security
 

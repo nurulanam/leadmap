@@ -43,16 +43,34 @@ final class Searches_Screen {
 			</a>
 			<hr class="wp-header-end" />
 
-			<?php if ( isset( $_GET['started'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
-				<div class="notice notice-success is-dismissible">
-					<p><?php esc_html_e( 'Search queued. Results appear below as pages come back — this page refreshes itself while a search is running.', 'leadmap' ); ?></p>
-				</div>
-			<?php endif; ?>
+			<?php
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$watch = isset( $_GET['watch'] ) ? absint( $_GET['watch'] ) : 0;
 
-			<?php if ( $active ) : ?>
-				<meta http-equiv="refresh" content="8" />
-				<p class="leadmap-running"><span class="spinner is-active"></span> <?php esc_html_e( 'A search is running. Refreshing every 8 seconds…', 'leadmap' ); ?></p>
-			<?php endif; ?>
+			if ( $watch && Search_Repository::find( $watch ) ) {
+				$this->render_live( $watch );
+			} elseif ( $active ) {
+				?>
+				<p class="leadmap-running">
+					<span class="spinner is-active"></span>
+					<?php esc_html_e( 'A search is running.', 'leadmap' ); ?>
+					<?php
+					foreach ( $result['items'] as $candidate ) {
+						if ( in_array( $candidate->status, [ 'queued', 'running' ], true ) ) {
+							printf(
+								'<a href="%s">%s</a>',
+								esc_url( admin_url( 'admin.php?page=leadmap-searches&watch=' . (int) $candidate->id ) ),
+								esc_html__( 'Watch it live', 'leadmap' )
+							);
+
+							break;
+						}
+					}
+					?>
+				</p>
+				<?php
+			}
+			?>
 
 			<table class="wp-list-table widefat fixed striped">
 				<thead>
@@ -123,7 +141,15 @@ final class Searches_Screen {
 								?>
 							</td>
 							<td>
-								<?php if ( in_array( $search->status, [ 'failed', 'complete' ], true ) ) : ?>
+								<a class="button button-small" href="<?php echo esc_url( admin_url( 'admin.php?page=leadmap-searches&watch=' . (int) $search->id ) ); ?>">
+									<?php echo esc_html( in_array( $search->status, [ 'queued', 'running' ], true ) ? __( 'Watch', 'leadmap' ) : __( 'Log', 'leadmap' ) ); ?>
+								</a>
+								<?php if ( in_array( $search->status, [ 'queued', 'running' ], true ) ) : ?>
+									<a class="button button-small" href="<?php echo esc_url( $this->action_url( 'stop', (int) $search->id ) ); ?>">
+										<?php esc_html_e( 'Stop', 'leadmap' ); ?>
+									</a>
+								<?php endif; ?>
+								<?php if ( in_array( $search->status, [ 'failed', 'complete', 'cancelled' ], true ) ) : ?>
 									<a class="button button-small" href="<?php echo esc_url( $this->action_url( 'rerun', (int) $search->id ) ); ?>">
 										<?php esc_html_e( 'Re-run', 'leadmap' ); ?>
 									</a>
@@ -161,6 +187,114 @@ final class Searches_Screen {
 		<?php
 	}
 
+	/**
+	 * The live console, as a modal.
+	 *
+	 * A search is a chain of background jobs, so without this the screen sits still and looks
+	 * broken. A modal rather than an inline panel because the log wants room: full height for
+	 * the output, and the table behind it stays where it was when the modal closes.
+	 */
+	private function render_live( int $search_id ): void {
+		$search  = Search_Repository::find( $search_id );
+		$log     = Search_Repository::get_log( $search_id );
+		$running = in_array( (string) $search->status, [ 'queued', 'running' ], true );
+		$close   = admin_url( 'admin.php?page=leadmap-searches' );
+
+		?>
+		<div class="leadmap-modal" id="leadmap-live-modal" data-close-url="<?php echo esc_url( $close ); ?>">
+			<div class="leadmap-modal__backdrop" data-leadmap-close></div>
+
+			<div class="leadmap-modal__box" role="dialog" aria-modal="true" aria-labelledby="leadmap-live-title">
+				<div id="leadmap-live"
+					class="leadmap-live<?php echo $running ? ' is-running' : ''; ?><?php echo 'failed' === $search->status ? ' is-failed' : ''; ?>">
+
+					<div class="leadmap-modal__head">
+						<span class="leadmap-live__spinner" aria-hidden="true"></span>
+						<div class="leadmap-modal__titles">
+							<strong class="leadmap-live__state" id="leadmap-live-title">
+								<?php
+								echo esc_html(
+									$running
+										? __( 'Searching…', 'leadmap' )
+										: ( 'failed' === $search->status ? __( 'Search failed', 'leadmap' ) : __( 'Search complete', 'leadmap' ) )
+								);
+								?>
+							</strong>
+							<span class="leadmap-live__title"><?php echo esc_html( (string) ( $search->label ?: $search->industry ) ); ?></span>
+						</div>
+
+						<a href="<?php echo esc_url( $close ); ?>" class="leadmap-modal__close"
+							data-leadmap-close aria-label="<?php esc_attr_e( 'Close', 'leadmap' ); ?>">&times;</a>
+					</div>
+
+					<div class="leadmap-modal__body">
+						<div class="leadmap-live__bar<?php echo $running ? '' : ' is-done'; ?>">
+							<span style="width: <?php echo esc_attr( (string) $this->percent( $search ) ); ?>%"></span>
+						</div>
+
+						<p class="leadmap-live__stats">
+							<?php
+							printf(
+								/* translators: 1: new leads, 2: total results, 3: cost. */
+								esc_html__( '%1$s new leads · %2$s results seen · $%3$s', 'leadmap' ),
+								esc_html( (string) (int) $search->results_new ),
+								esc_html( (string) (int) $search->results_found ),
+								esc_html( number_format( (float) $search->api_cost, 2 ) )
+							);
+							?>
+						</p>
+
+						<div class="leadmap-live__log" role="log" aria-live="polite">
+							<?php foreach ( $log as $entry ) : ?>
+								<div class="leadmap-live__line is-<?php echo esc_attr( (string) ( $entry['level'] ?? 'info' ) ); ?>">
+									<span class="leadmap-live__time"><?php echo esc_html( gmdate( 'H:i:s', (int) ( $entry['at'] ?? 0 ) ) ); ?></span>
+									<span><?php echo esc_html( (string) ( $entry['message'] ?? '' ) ); ?></span>
+								</div>
+							<?php endforeach; ?>
+						</div>
+
+						<p class="leadmap-live__hint" <?php echo $running ? '' : 'hidden'; ?>>
+							<?php esc_html_e( 'Keep this open and the search keeps moving. You can close it — it carries on in the background either way.', 'leadmap' ); ?>
+						</p>
+					</div>
+
+					<div class="leadmap-modal__foot">
+						<p class="leadmap-live__done" <?php echo $running ? 'hidden' : ''; ?>>
+							<a class="button button-primary"
+								href="<?php echo esc_url( admin_url( 'admin.php?page=leadmap&search_id=' . $search_id ) ); ?>"
+								<?php echo (int) $search->results_new > 0 ? '' : 'hidden'; ?>>
+								<?php esc_html_e( 'View the leads', 'leadmap' ); ?>
+							</a>
+							<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=leadmap-new-search' ) ); ?>">
+								<?php esc_html_e( 'Run another search', 'leadmap' ); ?>
+							</a>
+						</p>
+
+						<button type="button" class="button leadmap-live__stop" <?php echo $running ? '' : 'hidden'; ?>>
+							<?php esc_html_e( 'Stop search', 'leadmap' ); ?>
+						</button>
+
+						<a href="<?php echo esc_url( $close ); ?>" class="button" data-leadmap-close>
+							<?php esc_html_e( 'Close', 'leadmap' ); ?>
+						</a>
+					</div>
+				</div>
+			</div>
+		</div>
+		<?php
+	}
+
+	/** Results against the cap — the only honest progress Google gives us. */
+	private function percent( object $search ): int {
+		if ( ! in_array( (string) $search->status, [ 'queued', 'running' ], true ) ) {
+			return 100;
+		}
+
+		$max = max( 1, (int) $search->max_results );
+
+		return (int) max( 5, min( 100, round( ( (int) $search->results_found / $max ) * 100 ) ) );
+	}
+
 	private function handle_actions(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$action = isset( $_GET['lm_action'] ) ? sanitize_key( wp_unslash( $_GET['lm_action'] ) ) : '';
@@ -180,6 +314,24 @@ final class Searches_Screen {
 			Search_Repository::delete( $id );
 		}
 
+		if ( 'stop' === $action ) {
+			$search = Search_Repository::find( $id );
+
+			if ( $search && in_array( $search->status, [ 'queued', 'running' ], true ) ) {
+				Search_Repository::cancel( $id );
+				Scheduler::cancel( Job_Runner::SEARCH_RUN, [ $id ] );
+				Search_Repository::log(
+					$id,
+					sprintf(
+						/* translators: %d: leads collected before stopping. */
+						__( 'Stopped by you — %d leads collected so far have been kept', 'leadmap' ),
+						(int) $search->results_new
+					),
+					'warn'
+				);
+			}
+		}
+
 		if ( 'rerun' === $action ) {
 			Search_Repository::update(
 				$id,
@@ -193,7 +345,11 @@ final class Searches_Screen {
 				]
 			);
 
+			Search_Repository::update( $id, [ 'log_json' => null ] );
 			Scheduler::enqueue( Job_Runner::SEARCH_RUN, [ $id ] );
+
+			wp_safe_redirect( admin_url( 'admin.php?page=leadmap-searches&watch=' . $id ) );
+			exit;
 		}
 
 		wp_safe_redirect( admin_url( 'admin.php?page=leadmap-searches' ) );

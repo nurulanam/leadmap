@@ -3,7 +3,7 @@
  * Plugin Name:       LeadMap — Lead Collector & Outreach
  * Plugin URI:        https://example.com/leadmap
  * Description:       Collect local business leads from Google Maps by industry and ZIP, then triage, audit and reach out — all from WP Admin.
- * Version:           0.2.0
+ * Version:           0.3.2
  * Requires at least: 6.4
  * Requires PHP:      8.1
  * Author:            LeadMap
@@ -21,7 +21,7 @@ namespace LeadMap;
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'LEADMAP_VERSION', '0.2.0' );
+define( 'LEADMAP_VERSION', '0.3.2' );
 define( 'LEADMAP_FILE', __FILE__ );
 define( 'LEADMAP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'LEADMAP_URL', plugin_dir_url( __FILE__ ) );

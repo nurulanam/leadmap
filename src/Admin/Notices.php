@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace LeadMap\Admin;
 
+use LeadMap\Jobs\Scheduler;
 use LeadMap\Support\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -18,6 +19,7 @@ final class Notices {
 	public function register(): void {
 		add_action( 'admin_notices', [ $this, 'welcome' ] );
 		add_action( 'admin_notices', [ $this, 'missing_key' ] );
+		add_action( 'admin_notices', [ $this, 'background_jobs' ] );
 		add_action( 'admin_post_leadmap_dismiss_welcome', [ $this, 'dismiss_welcome' ] );
 	}
 
@@ -70,6 +72,49 @@ final class Notices {
 			<p>
 				<?php esc_html_e( 'No Google API key is configured, so searches cannot run.', 'leadmap' ); ?>
 				<a href="<?php echo esc_url( admin_url( 'admin.php?page=leadmap-settings' ) ); ?>"><?php esc_html_e( 'Add one now.', 'leadmap' ); ?></a>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Warn when nothing reliable is running background jobs.
+	 *
+	 * Searches, enrichment and PageSpeed all run as queued jobs. With WP-Cron disabled and
+	 * no Action Scheduler, the only thing moving them along is an open admin page — which
+	 * works, but makes long searches feel stuck.
+	 */
+	public function background_jobs(): void {
+		if ( ! current_user_can( 'leadmap_manage' ) ) {
+			return;
+		}
+
+		$screen = get_current_screen();
+
+		if ( ! $screen || ! str_contains( (string) $screen->id, 'leadmap' ) ) {
+			return;
+		}
+
+		if ( Scheduler::has_action_scheduler() ) {
+			return;
+		}
+
+		$cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+
+		if ( ! $cron_disabled ) {
+			return;
+		}
+
+		?>
+		<div class="notice notice-warning">
+			<p>
+				<strong><?php esc_html_e( 'Background jobs have nothing reliable to run them.', 'leadmap' ); ?></strong>
+			</p>
+			<p>
+				<?php esc_html_e( 'WP-Cron is disabled on this site (DISABLE_WP_CRON) and Action Scheduler is not installed. LeadMap will keep working — searches continue while you watch them, and any LeadMap screen resumes stalled work — but enrichment and PageSpeed will lag behind.', 'leadmap' ); ?>
+			</p>
+			<p>
+				<?php esc_html_e( 'The fix is either a real system cron hitting wp-cron.php every minute, or installing the free Action Scheduler plugin.', 'leadmap' ); ?>
 			</p>
 		</div>
 		<?php

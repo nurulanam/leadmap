@@ -16,6 +16,7 @@ use LeadMap\Install\Installer;
 use LeadMap\Jobs\Job_Runner;
 use LeadMap\Jobs\Watchdog;
 use LeadMap\Providers\Provider_Registry;
+use LeadMap\Rest\Rest_Controller;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -51,6 +52,7 @@ final class Plugin {
 		( new Job_Runner() )->register();
 		( new Watchdog() )->register();
 		( new Csv_Exporter() )->register();
+		( new Rest_Controller() )->register();
 
 		if ( is_admin() ) {
 			( new Menu() )->register();

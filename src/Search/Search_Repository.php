@@ -51,6 +51,52 @@ final class Search_Repository {
 		$wpdb->update( Schema::table( 'searches' ), $data, [ 'id' => $id ] );
 	}
 
+	/** Keep only the most recent lines — a log is for watching, not for archiving. */
+	private const MAX_LOG_LINES = 60;
+
+	/**
+	 * Append a line to a search's live log.
+	 *
+	 * Read-modify-write on a single row. Two workers never run the same search at once —
+	 * each page re-enqueues the next — so there is no contention to guard against here.
+	 */
+	public static function log( int $id, string $message, string $level = 'info' ): void {
+		global $wpdb;
+
+		$table = Schema::table( 'searches' );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$current = (string) $wpdb->get_var( $wpdb->prepare( "SELECT log_json FROM {$table} WHERE id = %d", $id ) );
+
+		$lines = json_decode( $current, true );
+		$lines = is_array( $lines ) ? $lines : [];
+
+		$lines[] = [
+			'at'      => time(),
+			'level'   => in_array( $level, [ 'info', 'good', 'warn', 'error' ], true ) ? $level : 'info',
+			'message' => mb_substr( $message, 0, 300 ),
+		];
+
+		if ( count( $lines ) > self::MAX_LOG_LINES ) {
+			$lines = array_slice( $lines, -self::MAX_LOG_LINES );
+		}
+
+		$wpdb->update( $table, [ 'log_json' => wp_json_encode( $lines ) ], [ 'id' => $id ] );
+	}
+
+	/** @return array<int,array{at:int,level:string,message:string}> */
+	public static function get_log( int $id ): array {
+		$search = self::find( $id );
+
+		if ( ! $search ) {
+			return [];
+		}
+
+		$lines = json_decode( (string) $search->log_json, true );
+
+		return is_array( $lines ) ? $lines : [];
+	}
+
 	public static function mark_failed( int $id, string $error ): void {
 		self::update(
 			$id,
@@ -58,6 +104,18 @@ final class Search_Repository {
 				'status'       => 'failed',
 				'error'        => mb_substr( $error, 0, 1000 ),
 				'completed_at' => current_time( 'mysql', true ),
+			]
+		);
+	}
+
+	/** Stop a search where it stands. Leads already collected are kept. */
+	public static function cancel( int $id ): void {
+		self::update(
+			$id,
+			[
+				'status'          => 'cancelled',
+				'next_page_token' => null,
+				'completed_at'    => current_time( 'mysql', true ),
 			]
 		);
 	}

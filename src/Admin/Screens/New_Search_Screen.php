@@ -49,6 +49,7 @@ final class New_Search_Screen {
 				<div class="notice notice-error"><p><?php echo esc_html( $error ); ?></p></div>
 			<?php endif; ?>
 
+			<div class="leadmap-search-layout">
 			<form method="post" class="leadmap-form">
 				<?php wp_nonce_field( self::NONCE ); ?>
 
@@ -158,6 +159,16 @@ final class New_Search_Screen {
 
 				<?php submit_button( __( 'Run search', 'leadmap' ), 'primary', 'leadmap_submit' ); ?>
 			</form>
+
+			<aside class="leadmap-map-panel">
+				<h2><?php esc_html_e( 'Search area', 'leadmap' ); ?></h2>
+				<div id="leadmap-map" class="leadmap-map"></div>
+				<p id="leadmap-map-status" class="leadmap-map__status"></p>
+				<p class="description">
+					<?php esc_html_e( 'The circle is the area Google is asked to prioritise. Results just outside it can still appear — it is a bias, not a hard boundary.', 'leadmap' ); ?>
+				</p>
+			</aside>
+			</div>
 		</div>
 		<?php
 	}
@@ -230,7 +241,7 @@ final class New_Search_Screen {
 
 		Scheduler::enqueue( Job_Runner::SEARCH_RUN, [ $search_id ] );
 
-		wp_safe_redirect( admin_url( 'admin.php?page=leadmap-searches&started=' . $search_id ) );
+		wp_safe_redirect( admin_url( 'admin.php?page=leadmap-searches&watch=' . $search_id ) );
 		exit;
 	}
 

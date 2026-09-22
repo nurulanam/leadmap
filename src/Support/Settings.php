@@ -26,6 +26,7 @@ final class Settings {
 		'region_code'         => 'US',
 		'language_code'       => 'en',
 		'monthly_spend_cap'   => 50.00,
+		'max_cost_per_search' => 0.50,
 		'auto_enrich'         => true,
 		'auto_pagespeed'      => true,
 		'pagespeed_per_minute' => 4,

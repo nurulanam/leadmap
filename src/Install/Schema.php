@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
 final class Schema {
 
 	/** Bumped whenever a table definition below changes. */
-	public const DB_VERSION = 2;
+	public const DB_VERSION = 5;
 
 	public static function table( string $name ): string {
 		global $wpdb;
@@ -42,9 +42,14 @@ final class Schema {
 			results_found INT UNSIGNED NOT NULL DEFAULT 0,
 			results_new INT UNSIGNED NOT NULL DEFAULT 0,
 			pages_fetched INT UNSIGNED NOT NULL DEFAULT 0,
+			empty_pages INT UNSIGNED NOT NULL DEFAULT 0,
+			barren_pages INT UNSIGNED NOT NULL DEFAULT 0,
+			stop_reason VARCHAR(50) NOT NULL DEFAULT '',
 			next_page_token VARCHAR(2048) NULL,
 			api_cost DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
 			error TEXT NULL,
+			log_json LONGTEXT NULL,
+			last_progress_at DATETIME NULL,
 			created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
 			completed_at DATETIME NULL,

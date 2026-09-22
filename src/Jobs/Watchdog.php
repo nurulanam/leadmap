@@ -16,6 +16,8 @@ namespace LeadMap\Jobs;
 use LeadMap\Events\Event_Repository;
 use LeadMap\Install\Schema;
 use LeadMap\Leads\Lead_Repository;
+use LeadMap\Search\Search_Repository;
+use LeadMap\Search\Search_Runner;
 use LeadMap\Support\Logger;
 use LeadMap\Support\Settings;
 
@@ -31,6 +33,28 @@ final class Watchdog {
 	public function register(): void {
 		add_action( self::HOOK, [ $this, 'run' ] );
 		add_action( 'init', [ $this, 'schedule' ] );
+
+		// An admin page view is the most reliable trigger there is on a site whose cron is
+		// unreliable, so loading any LeadMap screen also resumes anything that stalled.
+		add_action( 'admin_init', [ $this, 'maybe_resume_on_admin' ] );
+	}
+
+	/** Cheap guard so this runs at most once a minute, not on every admin request. */
+	public function maybe_resume_on_admin(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+
+		if ( ! str_starts_with( $page, 'leadmap' ) || ! current_user_can( 'leadmap_search' ) ) {
+			return;
+		}
+
+		if ( get_transient( 'leadmap_resume_check' ) ) {
+			return;
+		}
+
+		set_transient( 'leadmap_resume_check', 1, MINUTE_IN_SECONDS );
+
+		$this->resume_searches();
 	}
 
 	/** Keep an hourly sweep on the calendar. */
@@ -49,6 +73,55 @@ final class Watchdog {
 	}
 
 	public function run(): void {
+		$this->resume_searches();
+		$this->unstick_leads();
+	}
+
+	/**
+	 * Restart searches that stopped mid-way.
+	 *
+	 * The live console drives a search forward while someone is watching it. Nobody watches
+	 * for long, so this covers the rest: a search whose next page was handed to WP-Cron and
+	 * never picked up is simply run again from where it left off.
+	 */
+	private function resume_searches(): void {
+		global $wpdb;
+
+		$table  = Schema::table( 'searches' );
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( 5 * MINUTE_IN_SECONDS ) );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only.
+		$stalled = (array) $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT id FROM {$table}
+				 WHERE status IN ( 'queued', 'running' )
+				   AND COALESCE( last_progress_at, created_at ) < %s
+				 ORDER BY id ASC LIMIT 10",
+				$cutoff
+			)
+		);
+
+		foreach ( $stalled as $id ) {
+			$id = (int) $id;
+
+			if ( ! Lock::acquire( 'search_' . $id, 120 ) ) {
+				continue;
+			}
+
+			try {
+				Search_Repository::log( $id, __( 'Resuming after a pause in background processing', 'leadmap' ), 'warn' );
+				( new Search_Runner() )->run( $id );
+			} finally {
+				Lock::release( 'search_' . $id );
+			}
+		}
+
+		if ( $stalled ) {
+			Logger::info( 'Resumed stalled searches.', [ 'count' => count( $stalled ) ] );
+		}
+	}
+
+	private function unstick_leads(): void {
 		global $wpdb;
 
 		$minutes = max( 5, (int) Settings::get( 'stuck_after_minutes', 15 ) );
