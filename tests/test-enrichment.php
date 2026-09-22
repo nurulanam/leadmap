@@ -83,8 +83,10 @@ gt('seo gap score',            $s['gap_score'], 60);
 
 $scored = $scorer->score(['http'=>['status'=>200],'seo'=>$s,'tech'=>$t,
                           'speed_mobile'=>['score'=>21]]);
-check('staleness maxes out',   $scored['score'], 100);
+gt('scores high',              $scored['score'], 75);
+lt('but leaves headroom for worse', $scored['score'], 100);
 gt('many signals',             count($scored['signals']), 8);
+check('all five categories measured', $scored['confidence'], 100);
 
 echo "\n== fixture B: current site ==\n";
 $t2 = $tech->detect($new); $s2 = $seo->analyze($new);
@@ -101,8 +103,56 @@ lt('low seo gap',              $s2['gap_score'], 10);
 
 $scored2 = $scorer->score(['http'=>['status'=>200],'seo'=>$s2,'tech'=>$t2,
                            'speed_mobile'=>['score'=>96]]);
-check('staleness zero',        $scored2['score'], 0);
+lt('scores near zero',         $scored2['score'], 5);
 check('no signals',            $scored2['signals'], []);
+
+echo "\n== the score ranks, rather than saturating ==\n";
+// The old additive model pinned anything mildly bad at 100, so it could not sort a queue.
+$dead    = $scorer->score(['unreachable'=>true]);
+$ancient = $scored['score'];
+$modern  = $scored2['score'];
+$middling = $scorer->score(['http'=>['status'=>200],
+    'seo'=>['gap_score'=>30,'has_viewport'=>true,'is_https'=>true,'copyright_year'=>(int)gmdate('Y')-3],
+    'tech'=>['dated_markers'=>['bootstrap_3']],
+    'speed_mobile'=>['score'=>55]])['score'];
+
+printf("     dead %d  >  ancient %d  >  middling %d  >  modern %d\n",
+       $dead['score'], $ancient, $middling, $modern);
+check('dead beats ancient',      $dead['score'] > $ancient, true);
+check('ancient beats middling',  $ancient > $middling, true);
+check('middling beats modern',   $middling > $modern, true);
+
+echo "\n== missing data is not counted against a site ==\n";
+// A lead whose PageSpeed has not arrived must not look better or worse for it.
+$full    = ['http'=>['status'=>200],'seo'=>$s,'tech'=>$t,'speed_mobile'=>['score'=>21]];
+$noSpeed = $full; unset($noSpeed['speed_mobile']);
+
+$a = $scorer->score($full);
+$b = $scorer->score($noSpeed);
+check('speed missing lowers confidence', $b['confidence'] < $a['confidence'], true);
+check('confidence is 70% without speed', $b['confidence'], 70);
+check('still scores high on what is known', $b['score'] > 70, true);
+check('speed marked unavailable', $b['categories']['speed']['available'], false);
+check('seo still available',      $b['categories']['seo']['available'], true);
+
+echo "\n== both strategies are used when present ==\n";
+$mobileOnly = $scorer->score(['http'=>['status'=>200],'seo'=>$s2,'tech'=>$t2,'speed_mobile'=>['score'=>30]]);
+$bothSlow   = $scorer->score(['http'=>['status'=>200],'seo'=>$s2,'tech'=>$t2,
+                              'speed_mobile'=>['score'=>30],'speed_desktop'=>['score'=>30]]);
+$mobileBad  = $scorer->score(['http'=>['status'=>200],'seo'=>$s2,'tech'=>$t2,
+                              'speed_mobile'=>['score'=>30],'speed_desktop'=>['score'=>95]]);
+// A good desktop score does soften the speed penalty on its own...
+check('desktop lifts the speed category',
+      $mobileBad['categories']['speed']['score'] < $bothSlow['categories']['speed']['score'], true);
+// ...but a site that is fine on a laptop and awful on a phone is the *better* pitch: the
+// problem is sharp, provable, and the owner has almost certainly never seen it. So overall
+// it must rank above a site that is merely slow everywhere.
+check('a big mobile gap ranks higher overall', $mobileBad['score'] > $bothSlow['score'], true);
+check('the gap is recorded as its own signal',
+      (bool) array_filter($mobileBad['signals'], fn($x) => $x['key'] === 'mobile_gap'), true);
+check('uniformly slow raises no gap signal',
+      (bool) array_filter($bothSlow['signals'], fn($x) => $x['key'] === 'mobile_gap'), false);
+check('mobile-only uses mobile in full', $mobileOnly['score'] >= $bothSlow['score'] - 1, true);
 
 echo "\n== broken sites ==\n";
 check('dead host scores high', $scorer->score(['unreachable'=>true])['score'] >= 45, true);

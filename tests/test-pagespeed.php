@@ -17,7 +17,10 @@ function is_wp_error($t){return $t instanceof WP_Error;}
 function wp_parse_url($u,$c=-1){return $c===-1?parse_url($u):parse_url($u,$c);}
 function __($t,$d=''){return $t;}
 function current_time($t,$g=0){return gmdate('Y-m-d H:i:s');}
-function get_option($k,$d=false){return $d;}
+function get_option($k,$d=false){return $GLOBALS['opts'][$k] ?? $d;}
+function update_option($k,$v,$a=null){$GLOBALS['opts'][$k]=$v;return true;}
+function wp_parse_args($a,$d){return array_merge($d,is_array($a)?$a:[]);}
+$GLOBALS['opts']=[];
 
 require LEADMAP_DIR.'src/Autoloader.php'; LeadMap\Autoloader::register();
 
@@ -106,6 +109,26 @@ check('small gap quiet',   $gap(58, 47) >= 25, false);
 // add_query_arg() runs urlencode_deep() itself. Pre-encoding with rawurlencode() turned
 // https://acme.com/ into https%253A%252F%252Facme.com%252F, which PageSpeed rejects — that
 // is why no reports came back at all.
+echo "\n== a refused key is not reported as a rate limit ==\n";
+// The failure that wasted a support round trip: PageSpeed refused the key, LeadMap silently
+// retried without one, hit the anonymous limit, and then advised enabling an API that was
+// already enabled — hiding the actual refusal.
+$explain = new ReflectionMethod($sa, 'explain'); $explain->setAccessible(true);
+
+$rate_limited = new WP_Error('leadmap_http_429', 'Quota exceeded for quota metric \'Queries\'.');
+
+$blind = $explain->invoke($sa, $rate_limited, '');
+$aware = $explain->invoke($sa, $rate_limited, 'PageSpeed Insights API has not been used in project 12345 before or it is disabled.');
+
+check('without a key refusal, reports the limit',
+      str_contains(strtolower($blind->get_error_message()), 'rate limit'), true);
+check('with one, names the key as the cause',
+      str_contains(strtolower($aware->get_error_message()), 'refused your api key'), true);
+check('and quotes Google\'s own reason',
+      str_contains($aware->get_error_message(), 'has not been used in project'), true);
+check('and stops telling them to enable what they enabled',
+      str_contains($aware->get_error_message(), 'Unauthenticated requests are limited'), false);
+
 echo "\n== query encoding (regression) ==\n";
 
 $wp_add_query_arg = function (array $args, string $url): string {

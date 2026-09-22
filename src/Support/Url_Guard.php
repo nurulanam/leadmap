@@ -81,6 +81,27 @@ final class Url_Guard {
 	 * @return string|WP_Error The normalized URL that is safe to request.
 	 */
 	public static function validate( string $url ): string|WP_Error {
+		return self::check( $url, true );
+	}
+
+	/**
+	 * Validate everything except DNS.
+	 *
+	 * For URLs this server will never fetch itself — one handed to a third-party screenshot
+	 * service, say, which the *browser* then loads. The SSRF risk of reaching our own private
+	 * network does not apply, but we still refuse loopback, private literals and reserved
+	 * namespaces rather than leaking internal hostnames to an outside service.
+	 *
+	 * Skipping the lookup matters: a grid of twelve leads would otherwise resolve
+	 * twenty-four hostnames just to render a page.
+	 *
+	 * @return string|WP_Error
+	 */
+	public static function validate_shape( string $url ): string|WP_Error {
+		return self::check( $url, false );
+	}
+
+	private static function check( string $url, bool $resolve ): string|WP_Error {
 		// Trim ordinary whitespace only. PHP's default trim() also strips NUL, which would
 		// quietly sanitize a null-terminated URL into a valid one instead of rejecting it.
 		$url = trim( $url, " \t\n\r\x0B" );
@@ -133,6 +154,29 @@ final class Url_Guard {
 			}
 		}
 
+		// A literal IP in the URL is checked whether or not we are resolving names.
+		if ( filter_var( $host, FILTER_VALIDATE_IP ) && ! self::is_public_ip( $host ) ) {
+			return new WP_Error( 'leadmap_url_private', 'That address is private or reserved.' );
+		}
+
+		if ( str_starts_with( $host, '[' ) && str_ends_with( $host, ']' ) ) {
+			$inner = substr( $host, 1, -1 );
+
+			if ( ! filter_var( $inner, FILTER_VALIDATE_IP ) || ! self::is_public_ip( $inner ) ) {
+				return new WP_Error( 'leadmap_url_private', 'That address is private or reserved.' );
+			}
+		}
+
+		if ( ! $resolve ) {
+			// Still insist on something shaped like a public hostname.
+			if ( ! filter_var( $host, FILTER_VALIDATE_IP )
+				&& ! preg_match( '/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/', $host ) ) {
+				return new WP_Error( 'leadmap_url_invalid', 'That is not a valid public hostname.' );
+			}
+
+			return $url;
+		}
+
 		$ips = self::resolve( $host );
 
 		if ( is_wp_error( $ips ) ) {
@@ -154,11 +198,44 @@ final class Url_Guard {
 	}
 
 	/**
+	 * Resolved hosts for this request.
+	 *
+	 * DNS lookups are blocking C calls: they ignore our time budget, and PHP offers no way
+	 * to bound them. One page's worth of redirects and sub-pages hits the same hostname
+	 * repeatedly, so caching turns a crawl's worth of lookups into one per host.
+	 *
+	 * @var array<string,string[]|string> host => addresses, or an error message.
+	 */
+	private static array $dns_cache = [];
+
+	/** Forget cached lookups. Only useful in tests. */
+	public static function flush_dns_cache(): void {
+		self::$dns_cache = [];
+	}
+
+	/**
 	 * Resolve a hostname to every address it answers with.
 	 *
 	 * @return string[]|WP_Error
 	 */
 	private static function resolve( string $host ): array|WP_Error {
+		if ( isset( self::$dns_cache[ $host ] ) ) {
+			$cached = self::$dns_cache[ $host ];
+
+			return is_array( $cached )
+				? $cached
+				: new WP_Error( 'leadmap_url_dns', $cached );
+		}
+
+		$result = self::do_resolve( $host );
+
+		self::$dns_cache[ $host ] = is_wp_error( $result ) ? $result->get_error_message() : $result;
+
+		return $result;
+	}
+
+	/** @return string[]|WP_Error */
+	private static function do_resolve( string $host ): array|WP_Error {
 		// A bare IP in the URL skips DNS but still has to pass the range check.
 		if ( filter_var( $host, FILTER_VALIDATE_IP ) ) {
 			return [ $host ];

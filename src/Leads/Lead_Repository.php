@@ -140,6 +140,10 @@ final class Lead_Repository {
 			return 0;
 		}
 
+		foreach ( $ids as $id ) {
+			\LeadMap\Triage\Screenshot_Store::delete_for_lead( $id );
+		}
+
 		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 		$leads        = Schema::table( 'leads' );
 		$emails       = Schema::table( 'lead_emails' );
@@ -171,6 +175,7 @@ final class Lead_Repository {
 				'category'  => '',
 				'search_id' => 0,
 				'has_email' => '',
+				'triage'    => '',
 				'orderby'   => 'created_at',
 				'order'     => 'DESC',
 				'per_page'  => 25,
@@ -209,6 +214,17 @@ final class Lead_Repository {
 		if ( $args['search_id'] ) {
 			$where[]  = 'search_id = %d';
 			$params[] = (int) $args['search_id'];
+		}
+
+		if ( '' !== $args['triage'] ) {
+			if ( 'auto' === $args['triage'] ) {
+				$where[] = "triage_verdict <> '' AND triage_by IS NULL";
+			} elseif ( 'pending' === $args['triage'] ) {
+				$where[] = "triage_verdict = ''";
+			} else {
+				$where[]  = 'triage_verdict = %s';
+				$params[] = (string) $args['triage'];
+			}
 		}
 
 		if ( 'yes' === $args['has_email'] ) {

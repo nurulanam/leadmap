@@ -30,10 +30,14 @@ final class Settings {
 		'auto_enrich'         => true,
 		'auto_pagespeed'      => true,
 		'pagespeed_per_minute' => 4,
+		'pagespeed_timeout'   => 90,
 		'crawl_timeout'       => 10,
 		'enrich_budget'       => 60,
 		'stuck_after_minutes' => 15,
 		'log_level'           => 'error',
+		'screenshot_provider' => 'mshots',
+		'screenshot_key'      => '',
+		'auto_triage'         => false,
 	];
 
 	/** @return array<string,mixed> */

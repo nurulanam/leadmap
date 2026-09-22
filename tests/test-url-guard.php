@@ -96,4 +96,56 @@ if (is_wp_error($r) && $r->get_error_code() === 'leadmap_url_dns') {
       $ok ? '' : '('.$r->get_error_message().')');
 }
 
+echo "\n== link discovery must not resolve DNS ==\n";
+// A job once sat "in progress" for six minutes because every link on the page went through
+// the full check, and each one blocks on a DNS lookup that no time budget can interrupt.
+// Shape validation is what discovery uses; the full check runs before the actual request.
+$t = microtime(true);
+for ($i = 0; $i < 300; $i++) {
+    Url_Guard::validate_shape('https://host-' . $i . '-does-not-resolve.com/page');
+}
+$elapsed = microtime(true) - $t;
+printf("     300 shape checks in %.3fs\n", $elapsed);
+$fast = $elapsed < 1.0;
+if (!$fast) { $fail++; }
+printf("%s  300 unresolvable hosts stay fast\n", $fast ? 'PASS' : 'FAIL');
+
+echo "\n== shape validation keeps the dangerous cases out ==\n";
+foreach ([
+    'loopback literal'  => 'http://127.0.0.1/',
+    'metadata literal'  => 'http://169.254.169.254/latest/',
+    'private literal'   => 'http://10.1.2.3/',
+    'ipv6 loopback'     => 'http://[::1]/',
+    'mapped loopback'   => 'http://[::ffff:127.0.0.1]/',
+    'localhost'         => 'http://localhost/',
+    'internal suffix'   => 'http://db.internal/',
+    'file scheme'       => 'file:///etc/passwd',
+    'odd port'          => 'http://example.com:6379/',
+    'credentials'       => 'http://a:b@example.com/',
+] as $label => $url) {
+    $r = Url_Guard::validate_shape($url);
+    $ok = is_wp_error($r);
+    if (!$ok) { $fail++; }
+    printf("%s  BLOCK %-22s %s\n", $ok ? 'PASS' : 'FAIL', $label,
+        $ok ? '(' . $r->get_error_code() . ')' : '*** ALLOWED ***');
+}
+$ok = ! is_wp_error(Url_Guard::validate_shape('https://never-resolves-12345.com/contact'));
+if (!$ok) { $fail++; }
+printf("%s  ALLOW a normal public URL without resolving it\n", $ok ? 'PASS' : 'FAIL');
+
+echo "\n== repeated hosts are resolved once ==\n";
+Url_Guard::flush_dns_cache();
+$t = microtime(true);
+Url_Guard::validate('https://example.com/');
+$first = microtime(true) - $t;
+
+$t = microtime(true);
+for ($i = 0; $i < 50; $i++) { Url_Guard::validate('https://example.com/page-' . $i); }
+$cached = microtime(true) - $t;
+
+printf("     first lookup %.4fs, then 50 more in %.4fs\n", $first, $cached);
+$ok = $cached < max(0.05, $first);
+if (!$ok) { $fail++; }
+printf("%s  50 cached checks cost less than one lookup\n", $ok ? 'PASS' : 'FAIL');
+
 echo "\n".($fail?"FAILED: $fail\n":"ALL PASSED\n"); exit($fail?1:0);

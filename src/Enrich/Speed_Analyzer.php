@@ -54,12 +54,27 @@ final class Speed_Analyzer {
 
 		$last = null;
 
+		// Remembered so a failure can say *why* the keyed attempt was abandoned. Without it
+		// a keyless rate limit reads as "enable the API" — advice for a problem the operator
+		// may already have fixed, while the real refusal stays invisible.
+		$key_refusal = '';
+
+		// PageSpeed genuinely loads and profiles the page in a real Chrome, so it is slow by
+		// nature — and slowest on exactly the neglected sites we care about. A timeout here
+		// is usually the site being slow, not Google being unavailable.
+		$timeout = (int) max( 30, min( 180, (int) Settings::get( 'pagespeed_timeout', 90 ) ) );
+
 		foreach ( $attempts as $index => $attempt ) {
-			// PageSpeed actually loads the page, so 60s is normal rather than excessive.
-			$response = Http::get_json( self::ENDPOINT, $attempt, [], 60 );
+			$started  = microtime( true );
+			$response = Http::get_json( self::ENDPOINT, $attempt, [], $timeout );
+			$elapsed  = round( microtime( true ) - $started, 1 );
 
 			if ( ! is_wp_error( $response ) ) {
-				return $this->parse( $response, $attempt['strategy'], $safe );
+				$parsed            = $this->parse( $response, $attempt['strategy'], $safe );
+				$parsed['seconds'] = $elapsed;
+				$parsed['keyed']   = isset( $attempt['key'] );
+
+				return $parsed;
 			}
 
 			$last = $response;
@@ -70,13 +85,18 @@ final class Speed_Analyzer {
 				break;
 			}
 
-			Logger::info(
+			$key_refusal = $response->get_error_message();
+
+			Logger::error(
 				'PageSpeed rejected the API key; retrying without it.',
-				[ 'reason' => $response->get_error_message() ]
+				[ 'reason' => $key_refusal ]
 			);
 		}
 
-		return $this->explain( $last ?? new WP_Error( 'leadmap_psi_failed', 'PageSpeed returned no result.' ) );
+		return $this->explain(
+			$last ?? new WP_Error( 'leadmap_psi_failed', 'PageSpeed returned no result.' ),
+			$key_refusal
+		);
 	}
 
 	/** True when the refusal is about the key rather than the page being measured. */
@@ -124,12 +144,48 @@ final class Speed_Analyzer {
 			],
 			'final_url'   => (string) ( $lighthouse['finalUrl'] ?? $url ),
 			'fetched_at'  => current_time( 'mysql', true ),
+			// Lighthouse renders in a real Chrome at the requested viewport, so this is a
+			// genuine mobile screenshot when strategy is mobile — not a cropped desktop one.
+			'screenshot'  => (string) ( $audits['final-screenshot']['details']['data'] ?? '' ),
 		];
 	}
 
-	/** Turn PageSpeed's refusals into something an operator can act on. */
-	private function explain( WP_Error $error ): WP_Error {
+	/**
+	 * Turn PageSpeed's refusals into something an operator can act on.
+	 *
+	 * @param string $key_refusal Why the keyed attempt was abandoned, when one was made.
+	 */
+	private function explain( WP_Error $error, string $key_refusal = '' ): WP_Error {
 		$message = $error->get_error_message();
+
+		// A rate limit reached *after* falling back to an unauthenticated call is not a
+		// rate-limit problem — it is a key problem wearing a rate limit's clothes. Report
+		// the refusal, which is the thing that can actually be fixed.
+		if ( '' !== $key_refusal ) {
+			return new WP_Error(
+				$error->get_error_code(),
+				sprintf(
+					/* translators: %s: the reason Google gave for refusing the key. */
+					__( 'PageSpeed refused your API key, so the request was retried without one and hit the anonymous rate limit. Google\'s reason for refusing the key was: "%s". Check that PageSpeed Insights API is enabled on the same project the key belongs to, and that the key\'s API restrictions include it. Changes can take a few minutes to take effect.', 'leadmap' ),
+					$key_refusal
+				),
+				$error->get_error_data()
+			);
+		}
+
+		// A read timeout is its own thing: Google was reachable, the page was too slow to
+		// finish profiling. Saying "operation timed out" helps nobody.
+		if ( str_contains( $message, 'cURL error 28' ) || str_contains( strtolower( $message ), 'timed out' ) ) {
+			return new WP_Error(
+				'leadmap_psi_timeout',
+				sprintf(
+					/* translators: %d: the configured timeout in seconds. */
+					__( 'Google did not finish analysing this page within %d seconds. That usually means the site itself is very slow to load — which is a finding in its own right. It will be retried automatically; raise the PageSpeed timeout under Settings if it keeps happening.', 'leadmap' ),
+					(int) max( 30, min( 180, (int) Settings::get( 'pagespeed_timeout', 90 ) ) )
+				),
+				$error->get_error_data()
+			);
+		}
 
 		$patterns = [
 			'Lighthouse returned error'  => __( 'Google loaded the page but Lighthouse could not score it. This usually means the site is too slow to finish loading, blocks automated browsers, or returned an error — which is itself a finding worth noting.', 'leadmap' ),
@@ -138,7 +194,9 @@ final class Speed_Analyzer {
 			'DNS_FAILURE'                => __( 'Google could not resolve the domain.', 'leadmap' ),
 			'has not been used'          => __( 'The PageSpeed Insights API is not enabled on your Google Cloud project. Enable it under APIs & Services → Library, or leave the key out — PageSpeed also works unauthenticated, just with a lower rate limit.', 'leadmap' ),
 			'not authorized'             => __( 'Your API key is restricted to other APIs. Either add PageSpeed Insights API to the key\'s allowed list, or let LeadMap call it without a key.', 'leadmap' ),
-			'Quota exceeded'             => __( 'PageSpeed rate limit reached. Unauthenticated requests are limited to a few per minute — enable the PageSpeed Insights API on your project and the limit rises substantially.', 'leadmap' ),
+			'Quota exceeded'             => Settings::google_api_key()
+				? __( 'PageSpeed rate limit reached even with your API key. Lower "PageSpeed requests per minute" under Settings, or raise the quota for the PageSpeed Insights API in Google Cloud.', 'leadmap' )
+				: __( 'PageSpeed rate limit reached. No API key is configured, and unauthenticated requests are limited to a few per minute.', 'leadmap' ),
 			'rateLimitExceeded'          => __( 'PageSpeed rate limit reached. Leads already queued will be measured as the limit recovers.', 'leadmap' ),
 		];
 

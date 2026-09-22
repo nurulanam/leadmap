@@ -64,6 +64,7 @@ final class Leads_List_Table extends WP_List_Table {
 	public function get_bulk_actions(): array {
 		return [
 			'enrich' => __( 'Enrich (find emails, check site)', 'leadmap' ),
+			'speed'  => __( 'Check PageSpeed', 'leadmap' ),
 			'export' => __( 'Export to CSV', 'leadmap' ),
 			'delete' => __( 'Delete', 'leadmap' ),
 		];
@@ -79,6 +80,7 @@ final class Leads_List_Table extends WP_List_Table {
 			'zip'       => isset( $_REQUEST['zip'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['zip'] ) ) : '',
 			'category'  => isset( $_REQUEST['category'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['category'] ) ) : '',
 			'has_email' => isset( $_REQUEST['has_email'] ) ? sanitize_key( wp_unslash( $_REQUEST['has_email'] ) ) : '',
+			'triage'    => isset( $_REQUEST['triage'] ) ? sanitize_key( wp_unslash( $_REQUEST['triage'] ) ) : '',
 			'search_id' => isset( $_REQUEST['search_id'] ) ? absint( $_REQUEST['search_id'] ) : 0,
 			'orderby'   => isset( $_REQUEST['orderby'] ) ? sanitize_key( wp_unslash( $_REQUEST['orderby'] ) ) : 'created_at',
 			'order'     => isset( $_REQUEST['order'] ) ? sanitize_key( wp_unslash( $_REQUEST['order'] ) ) : 'desc',
@@ -203,7 +205,7 @@ final class Leads_List_Table extends WP_List_Table {
 		);
 	}
 
-	/** Mobile and desktop side by side, the way PageSpeed Insights reports them. */
+	/** Mobile and desktop side by side, plus where an unfinished measurement has got to. */
 	public function column_speed( $item ): string {
 		$enrichment = json_decode( (string) $item->enrichment_json, true );
 
@@ -234,6 +236,21 @@ final class Leads_List_Table extends WP_List_Table {
 				) ),
 				esc_html( $abbr ),
 				$score
+			);
+		}
+
+		$summary = \LeadMap\Enrich\Speed_Status::summary( $enrichment );
+
+		// A missing score is only meaningful with its reason attached.
+		if ( \LeadMap\Enrich\Speed_Status::in_progress( $summary ) ) {
+			$parts[] = sprintf(
+				'<span class="leadmap-speed leadmap-speed--pending">%s</span>',
+				esc_html( \LeadMap\Enrich\Speed_Status::label( $summary ) )
+			);
+		} elseif ( ! $parts && \LeadMap\Enrich\Speed_Status::FAILED === $summary ) {
+			$parts[] = sprintf(
+				'<span class="leadmap-speed leadmap-speed--failed">%s</span>',
+				esc_html__( 'Failed', 'leadmap' )
 			);
 		}
 
@@ -292,6 +309,7 @@ final class Leads_List_Table extends WP_List_Table {
 		$zip       = isset( $_REQUEST['zip'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['zip'] ) ) : '';
 		$category  = isset( $_REQUEST['category'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['category'] ) ) : '';
 		$has_email = isset( $_REQUEST['has_email'] ) ? sanitize_key( wp_unslash( $_REQUEST['has_email'] ) ) : '';
+		$triage    = isset( $_REQUEST['triage'] ) ? sanitize_key( wp_unslash( $_REQUEST['triage'] ) ) : '';
 		// phpcs:enable
 
 		$counts = Lead_Repository::status_counts();
@@ -324,6 +342,22 @@ final class Leads_List_Table extends WP_List_Table {
 						<?php echo esc_html( Normalize::humanize_type( $value ) ); ?>
 					</option>
 				<?php endforeach; ?>
+			</select>
+
+			<select name="triage">
+				<option value=""><?php esc_html_e( 'Triage: any', 'leadmap' ); ?></option>
+				<option value="pending" <?php selected( $triage, 'pending' ); ?>><?php esc_html_e( 'Not triaged', 'leadmap' ); ?></option>
+				<?php foreach ( \LeadMap\Triage\Verdicts::FLAGS as $flag ) : ?>
+					<option value="<?php echo esc_attr( $flag ); ?>" <?php selected( $triage, $flag ); ?>>
+						<?php echo esc_html( \LeadMap\Triage\Verdicts::label( $flag ) ); ?>
+					</option>
+				<?php endforeach; ?>
+				<?php foreach ( \LeadMap\Triage\Verdicts::TERMINAL as $flag ) : ?>
+					<option value="<?php echo esc_attr( $flag ); ?>" <?php selected( $triage, $flag ); ?>>
+						<?php echo esc_html( \LeadMap\Triage\Verdicts::label( $flag ) ); ?>
+					</option>
+				<?php endforeach; ?>
+				<option value="auto" <?php selected( $triage, 'auto' ); ?>><?php esc_html_e( 'Auto-triaged', 'leadmap' ); ?></option>
 			</select>
 
 			<select name="has_email">

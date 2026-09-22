@@ -124,6 +124,8 @@ final class Watchdog {
 	private function unstick_leads(): void {
 		global $wpdb;
 
+		// Enrichment is budgeted in seconds, so anything measured in minutes has stalled on
+		// something the budget cannot interrupt — a blocking DNS lookup, or a dead worker.
 		$minutes = max( 5, (int) Settings::get( 'stuck_after_minutes', 15 ) );
 		$cutoff  = gmdate( 'Y-m-d H:i:s', time() - ( $minutes * MINUTE_IN_SECONDS ) );
 		$table   = Schema::table( 'leads' );

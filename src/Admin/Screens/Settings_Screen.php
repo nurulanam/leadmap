@@ -12,7 +12,10 @@ namespace LeadMap\Admin\Screens;
 use LeadMap\Enrich\Speed_Analyzer;
 use LeadMap\Providers\Google_Places_Provider;
 use LeadMap\Search\Search_Query;
+use LeadMap\Triage\Screenshot_Store;
+use LeadMap\Triage\Screenshotter;
 use LeadMap\Support\Encryption;
+use LeadMap\Support\Http;
 use LeadMap\Support\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -157,7 +160,20 @@ final class Settings_Screen {
 							<input type="number" name="pagespeed_per_minute" id="lm-psi-rate" class="small-text" min="1" max="60" step="1"
 								value="<?php echo esc_attr( (string) Settings::get( 'pagespeed_per_minute', 4 ) ); ?>" />
 							<p class="description">
-								<?php esc_html_e( 'Requests are spaced to stay under Google\'s limit. Leave at 4 when calling PageSpeed without a key. Once the PageSpeed Insights API is enabled on your Google Cloud project and added to your key, 20 or more is comfortable.', 'leadmap' ); ?>
+								<?php esc_html_e( 'Requests are spaced to stay under Google\'s limit. Leave at 4 when calling PageSpeed without a key; 20 is comfortable once your key is accepted.', 'leadmap' ); ?>
+								<br />
+								<?php esc_html_e( 'This is a ceiling, not a promise: each measurement takes most of a minute, and background jobs only run when WordPress has something to run them. Keeping any LeadMap screen open lets the browser work through the queue directly, which is far faster than waiting on WP-Cron.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="lm-psi-timeout"><?php esc_html_e( 'PageSpeed timeout', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="pagespeed_timeout" id="lm-psi-timeout" class="small-text" min="30" max="180" step="10"
+								value="<?php echo esc_attr( (string) Settings::get( 'pagespeed_timeout', 90 ) ); ?>" />
+							<span><?php esc_html_e( 'seconds', 'leadmap' ); ?></span>
+							<p class="description">
+								<?php esc_html_e( 'Google loads and profiles the page in a real browser, so 30–60 seconds is normal and the slowest sites take longer — which is exactly the kind of lead worth having. Timeouts are retried automatically.', 'leadmap' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -170,6 +186,64 @@ final class Settings_Screen {
 							</label>
 							<p class="description">
 								<?php esc_html_e( 'Free, but each site is measured twice — once as a phone, once as a desktop — and each run takes up to a minute, so both go through a separate background queue. Enable the PageSpeed Insights API on your Google Cloud project for a higher rate limit.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+
+				<h2><?php esc_html_e( 'Triage', 'leadmap' ); ?></h2>
+
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="lm-shots"><?php esc_html_e( 'Screenshots', 'leadmap' ); ?></label></th>
+						<td>
+							<select name="screenshot_provider" id="lm-shots">
+								<?php foreach ( Screenshotter::providers() as $id => $label ) : ?>
+									<option value="<?php echo esc_attr( $id ); ?>" <?php selected( Settings::get( 'screenshot_provider', 'mshots' ), $id ); ?>>
+										<?php echo esc_html( $label ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description">
+								<?php esc_html_e( 'mShots is the service the WordPress.org plugin directory uses for its own previews: free, no account, and nothing is stored on your server. The paid options are sharper and more reliable on awkward sites.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Stored captures', 'leadmap' ); ?></th>
+						<td>
+							<?php $usage = Screenshot_Store::disk_usage(); ?>
+							<p>
+								<?php
+								printf(
+									/* translators: %s: disk space used, already formatted. */
+									esc_html__( '%s on disk.', 'leadmap' ),
+									esc_html( size_format( $usage, 1 ) ?: '0 B' )
+								);
+								?>
+							</p>
+							<p class="description">
+								<?php esc_html_e( 'PageSpeed returns the page as Google rendered it, so a screenshot is saved during each speed check — a genuine mobile render, at no extra cost. They live in uploads/leadmap-shots/ and are removed when a lead is deleted or skipped.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="lm-shot-key"><?php esc_html_e( 'Screenshot API key', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="password" name="screenshot_key" id="lm-shot-key" class="regular-text" autocomplete="off"
+								placeholder="<?php echo esc_attr( Settings::get( 'screenshot_key', '' ) ? Encryption::mask( (string) Encryption::decrypt( (string) Settings::get( 'screenshot_key', '' ) ) ) : __( 'Only needed for the paid providers', 'leadmap' ) ); ?>" />
+							<p class="description"><?php esc_html_e( 'Leave blank to keep the current key. Not needed for mShots.', 'leadmap' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Automatic triage', 'leadmap' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="auto_triage" value="1" <?php checked( (bool) Settings::get( 'auto_triage', false ) ); ?> />
+								<?php esc_html_e( 'Decide the unambiguous cases without asking', 'leadmap' ); ?>
+							</label>
+							<p class="description">
+								<?php esc_html_e( 'A dead domain becomes Broken, a lead with no website becomes No website, and a site that is fast, secure, mobile-ready and scores zero for staleness is skipped. Everything else still comes to you. Automatic verdicts are logged and can be undone.', 'leadmap' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -233,8 +307,13 @@ final class Settings_Screen {
 			'monthly_spend_cap'   => max( 0, (float) ( $_POST['monthly_spend_cap'] ?? 0 ) ),
 			'max_cost_per_search' => max( 0, (float) ( $_POST['max_cost_per_search'] ?? 0 ) ),
 			'auto_enrich'         => ! empty( $_POST['auto_enrich'] ),
+			'auto_triage'         => ! empty( $_POST['auto_triage'] ),
+			'screenshot_provider' => array_key_exists( sanitize_key( wp_unslash( $_POST['screenshot_provider'] ?? '' ) ), Screenshotter::providers() )
+				? sanitize_key( wp_unslash( $_POST['screenshot_provider'] ) )
+				: 'mshots',
 			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
 			'pagespeed_per_minute' => max( 1, min( 60, absint( $_POST['pagespeed_per_minute'] ?? 4 ) ) ),
+			'pagespeed_timeout'   => max( 30, min( 180, absint( $_POST['pagespeed_timeout'] ?? 90 ) ) ),
 			'crawl_timeout'       => max( 3, min( 60, absint( $_POST['crawl_timeout'] ?? 10 ) ) ),
 			'enrich_budget'       => max( 10, min( 300, absint( $_POST['enrich_budget'] ?? 60 ) ) ),
 			'stuck_after_minutes' => max( 5, min( 1440, absint( $_POST['stuck_after_minutes'] ?? 15 ) ) ),
@@ -247,6 +326,12 @@ final class Settings_Screen {
 			$values['google_api_key'] = Encryption::encrypt( sanitize_text_field( $submitted_key ) );
 		}
 
+		$shot_key = trim( (string) wp_unslash( $_POST['screenshot_key'] ?? '' ) );
+
+		if ( '' !== $shot_key ) {
+			$values['screenshot_key'] = Encryption::encrypt( sanitize_text_field( $shot_key ) );
+		}
+
 		Settings::update( $values );
 
 		return __( 'Settings saved.', 'leadmap' );
@@ -256,6 +341,47 @@ final class Settings_Screen {
 	 * Check both APIs, not just one. Geocoding alone passing is misleading — the key can be
 	 * valid and still be blocked from Places, which is the call that actually matters.
 	 */
+	/**
+	 * Ask PageSpeed directly whether it accepts the key.
+	 *
+	 * @return string Google's reason for refusing it, or '' when the key is accepted.
+	 */
+	private function test_pagespeed_key(): string {
+		$key = Settings::google_api_key();
+
+		if ( '' === $key ) {
+			return '';
+		}
+
+		$response = Http::get_json(
+			'https://www.googleapis.com/pagespeedonline/v5/runPagespeed',
+			[
+				'url'      => 'https://example.com/',
+				'strategy' => 'desktop',
+				'category' => 'performance',
+				'key'      => $key,
+			],
+			[],
+			60
+		);
+
+		if ( ! is_wp_error( $response ) ) {
+			return '';
+		}
+
+		$message = $response->get_error_message();
+
+		// Only a key or permission problem counts here. A slow page or a rate limit is a
+		// different conversation and must not be reported as a bad key.
+		foreach ( [ 'api key', 'not authorized', 'blocked', 'has not been used', 'permission', 'forbidden', 'disabled' ] as $needle ) {
+			if ( str_contains( strtolower( $message ), $needle ) ) {
+				return $message;
+			}
+		}
+
+		return '';
+	}
+
 	private function test_key(): string {
 		$provider = new Google_Places_Provider();
 
@@ -303,23 +429,33 @@ final class Settings_Screen {
 				);
 		}
 
-		// PageSpeed is a separate API with its own enablement, and it is the one that most
-		// often fails silently, so the test covers it too.
-		$psi = ( new Speed_Analyzer() )->analyze( 'https://example.com/', 'mobile' );
+		// PageSpeed is a separate API with its own enablement, and the one that most often
+		// fails quietly. This checks the key directly rather than through the fallback, so a
+		// refused key is reported as a refused key instead of a rate limit.
+		$psi_key = $this->test_pagespeed_key();
 
-		if ( is_wp_error( $psi ) ) {
+		if ( '' !== $psi_key ) {
 			$failed  = true;
-			$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: failed.', 'leadmap' ) . '</strong> '
-				. esc_html( $psi->get_error_message() );
+			$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: your key was refused.', 'leadmap' ) . '</strong> '
+				. esc_html( $psi_key ) . '<br />'
+				. esc_html__( 'LeadMap will fall back to unauthenticated requests, which Google limits to a few per minute. Enable PageSpeed Insights API on the key\'s project and add it to the key\'s API restrictions; changes take a few minutes to apply.', 'leadmap' );
 		} else {
-			$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: working.', 'leadmap' ) . '</strong> '
-				. esc_html(
-					sprintf(
-						/* translators: %d: the test score returned for example.com. */
-						__( 'Test measurement returned a score of %d.', 'leadmap' ),
-						(int) ( $psi['score'] ?? 0 )
-					)
-				);
+			$psi = ( new Speed_Analyzer() )->analyze( 'https://example.com/', 'mobile' );
+
+			if ( is_wp_error( $psi ) ) {
+				$failed  = true;
+				$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: failed.', 'leadmap' ) . '</strong> '
+					. esc_html( $psi->get_error_message() );
+			} else {
+				$lines[] = '<strong>' . esc_html__( 'PageSpeed Insights: working, with your key.', 'leadmap' ) . '</strong> '
+					. esc_html(
+						sprintf(
+							/* translators: %d: the test score returned for example.com. */
+							__( 'Test measurement returned a score of %d.', 'leadmap' ),
+							(int) ( $psi['score'] ?? 0 )
+						)
+					);
+			}
 		}
 
 		if ( ! $failed ) {

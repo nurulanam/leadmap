@@ -271,7 +271,12 @@ final class Website_Crawler {
 				continue;
 			}
 
-			if ( is_wp_error( Url_Guard::validate( $absolute ) ) ) {
+			// Shape only, deliberately. This runs on every link on the page, and the full
+			// check resolves DNS — a blocking call that ignores the time budget, so a page
+			// with eighty links would stall the job for minutes. The real request is
+			// validated in full by Http_Fetcher immediately before it is made, which is
+			// where the SSRF risk actually lives.
+			if ( is_wp_error( Url_Guard::validate_shape( $absolute ) ) ) {
 				continue;
 			}
 

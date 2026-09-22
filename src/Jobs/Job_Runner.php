@@ -12,11 +12,13 @@ namespace LeadMap\Jobs;
 
 use LeadMap\Enrich\Enrichment_Service;
 use LeadMap\Enrich\Speed_Analyzer;
+use LeadMap\Enrich\Speed_Status;
 use LeadMap\Leads\Lead_Repository;
 use LeadMap\Search\Search_Runner;
 use LeadMap\Support\Logger;
 use LeadMap\Support\Rate_Limiter;
 use LeadMap\Support\Settings;
+use LeadMap\Triage\Triage_Service;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -65,6 +67,19 @@ final class Job_Runner {
 
 		( new Enrichment_Service() )->enrich( $lead_id );
 
+		// Auto-triage sees a fully enriched lead, so the unambiguous cases never reach the
+		// queue. Off by default; every automatic verdict is logged and reversible.
+		$lead = Lead_Repository::find( $lead_id );
+
+		if ( $lead ) {
+			$service = new Triage_Service();
+			$verdict = $service->auto_verdict( $lead );
+
+			if ( '' !== $verdict ) {
+				$service->decide( $lead_id, [ $verdict ], '', true );
+			}
+		}
+
 		if ( ! Settings::get( 'auto_pagespeed', true ) ) {
 			return;
 		}
@@ -91,8 +106,15 @@ final class Job_Runner {
 		// Both strategies, like PageSpeed Insights itself. Mobile is what drives the
 		// staleness score, but desktop is what the owner sees on their own machine — and a
 		// large gap between the two is itself the argument.
-		Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, 'mobile', 0 ] );
-		Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, 'desktop', 0 ] );
+		self::queue_speed( $lead_id );
+	}
+
+	/** Queue both strategies and mark them so a blank score is never ambiguous. */
+	public static function queue_speed( int $lead_id ): void {
+		foreach ( Speed_Status::STRATEGIES as $strategy ) {
+			Speed_Status::set( $lead_id, $strategy, Speed_Status::QUEUED );
+			Scheduler::enqueue( self::LEAD_SPEED, [ $lead_id, $strategy, 0 ] );
+		}
 	}
 
 	/**
@@ -121,27 +143,55 @@ final class Job_Runner {
 		$wait = Rate_Limiter::wait_for( 'pagespeed' );
 
 		if ( $wait > 0 ) {
+			Speed_Status::set( $lead_id, $strategy, Speed_Status::WAITING );
 			Scheduler::enqueue_in( $wait, self::LEAD_SPEED, [ $lead_id, $strategy, $attempt ] );
 
 			return;
 		}
 
 		Rate_Limiter::consume( 'pagespeed', $rate );
+		Speed_Status::set( $lead_id, $strategy, Speed_Status::RUNNING );
 
 		$result = ( new Speed_Analyzer() )->analyze( (string) $lead->website, $strategy );
 
 		if ( ! is_wp_error( $result ) ) {
 			( new Enrichment_Service() )->apply_speed( $lead_id, $result, $strategy );
+			Speed_Status::set( $lead_id, $strategy, Speed_Status::DONE );
 
 			return;
 		}
 
 		// A rate-limit refusal is temporary. Back the whole queue off and try this lead again
 		// later, rather than marking it failed and losing the measurement for good.
-		if ( self::is_rate_limited( $result ) && $attempt < self::MAX_SPEED_ATTEMPTS ) {
-			$backoff = (int) min( 900, 60 * ( 2 ** $attempt ) );
+		$retryable = self::is_rate_limited( $result ) || 'leadmap_psi_timeout' === $result->get_error_code();
 
-			Rate_Limiter::penalise( 'pagespeed', $backoff );
+		if ( $retryable && $attempt < self::MAX_SPEED_ATTEMPTS ) {
+			// A timeout is worth trying again sooner than a rate limit: nothing is throttling
+			// us, the page was simply slow on that run.
+			$backoff = self::is_rate_limited( $result )
+				? (int) min( 900, 60 * ( 2 ** $attempt ) )
+				: (int) min( 300, 30 * ( $attempt + 1 ) );
+
+			if ( self::is_rate_limited( $result ) ) {
+				Rate_Limiter::penalise( 'pagespeed', $backoff );
+			}
+
+			Speed_Status::set(
+				$lead_id,
+				$strategy,
+				Speed_Status::WAITING,
+				self::is_rate_limited( $result )
+					? sprintf(
+						/* translators: %d: minutes until the next attempt. */
+						__( 'Rate limited — retrying in about %d minutes', 'leadmap' ),
+						(int) max( 1, round( $backoff / 60 ) )
+					)
+					: sprintf(
+						/* translators: %d: seconds until the next attempt. */
+						__( 'Google timed out on this page — retrying in %d seconds', 'leadmap' ),
+						$backoff
+					)
+			);
 			Scheduler::enqueue_in( $backoff, self::LEAD_SPEED, [ $lead_id, $strategy, $attempt + 1 ] );
 
 			Logger::info(
@@ -160,6 +210,7 @@ final class Job_Runner {
 		// Store the reason so the lead screen can explain the blank instead of showing
 		// nothing at all, which looks like the job never ran.
 		( new Enrichment_Service() )->record_speed_failure( $lead_id, $strategy, $result->get_error_message() );
+		Speed_Status::set( $lead_id, $strategy, Speed_Status::FAILED, $result->get_error_message() );
 	}
 
 	private static function is_rate_limited( \WP_Error $error ): bool {

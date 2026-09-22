@@ -13,13 +13,19 @@ declare( strict_types=1 );
 
 namespace LeadMap\Rest;
 
+use LeadMap\Enrich\Enrichment_Service;
+use LeadMap\Enrich\Speed_Analyzer;
+use LeadMap\Enrich\Speed_Status;
 use LeadMap\Jobs\Job_Runner;
 use LeadMap\Jobs\Lock;
 use LeadMap\Jobs\Scheduler;
+use LeadMap\Leads\Lead_Repository;
 use LeadMap\Providers\Google_Places_Provider;
 use LeadMap\Search\Search_Repository;
 use LeadMap\Search\Search_Runner;
 use LeadMap\Support\Settings;
+use LeadMap\Triage\Triage_Service;
+use LeadMap\Triage\Verdicts;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -53,6 +59,70 @@ final class Rest_Controller {
 						'required'          => false,
 						'sanitize_callback' => 'sanitize_text_field',
 					],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/speed/next',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'speed_next' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/leads/(?P<id>\d+)/speed',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'check_speed' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+				'args'                => [
+					'id' => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/leads/(?P<id>\d+)/speed/status',
+			[
+				'methods'             => 'GET',
+				'callback'            => [ $this, 'speed_status' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+				'args'                => [
+					'id' => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/leads/(?P<id>\d+)/triage',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'triage' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+				'args'                => [
+					'id'    => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
+					'flags' => [ 'type' => 'array', 'required' => true ],
+					'note'  => [ 'type' => 'string', 'required' => false, 'sanitize_callback' => 'sanitize_textarea_field' ],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/leads/(?P<id>\d+)/triage/undo',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'triage_undo' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+				'args'                => [
+					'id' => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
 				],
 			]
 		);
@@ -94,6 +164,188 @@ final class Rest_Controller {
 
 	public function can_search(): bool {
 		return current_user_can( 'leadmap_search' );
+	}
+
+	public function can_audit(): bool {
+		return current_user_can( 'leadmap_audit' );
+	}
+
+	/**
+	 * Measure speed on demand.
+	 *
+	 * Runs mobile inline so the operator sees a number straight away, and queues desktop
+	 * behind it. Waiting on two sixty-second Lighthouse runs in one request would time out
+	 * on most hosts.
+	 */
+	public function check_speed( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$id   = absint( $request->get_param( 'id' ) );
+		$lead = Lead_Repository::find( $id );
+
+		if ( ! $lead ) {
+			return new WP_Error( 'leadmap_not_found', __( 'Lead not found.', 'leadmap' ), [ 'status' => 404 ] );
+		}
+
+		if ( '' === (string) $lead->website ) {
+			return new WP_Error(
+				'leadmap_no_website',
+				__( 'This lead has no website to measure.', 'leadmap' ),
+				[ 'status' => 400 ]
+			);
+		}
+
+		$lock = 'speed_' . $id;
+
+		if ( ! Lock::acquire( $lock, 180 ) ) {
+			return new WP_Error(
+				'leadmap_busy',
+				__( 'A speed check for this lead is already running.', 'leadmap' ),
+				[ 'status' => 409 ]
+			);
+		}
+
+		try {
+			Speed_Status::set( $id, 'mobile', Speed_Status::RUNNING );
+
+			$result = ( new Speed_Analyzer() )->analyze( (string) $lead->website, 'mobile' );
+
+			if ( is_wp_error( $result ) ) {
+				( new Enrichment_Service() )->record_speed_failure( $id, 'mobile', $result->get_error_message() );
+				Speed_Status::set( $id, 'mobile', Speed_Status::FAILED, $result->get_error_message() );
+
+				return new WP_Error( 'leadmap_speed_failed', $result->get_error_message(), [ 'status' => 422 ] );
+			}
+
+			( new Enrichment_Service() )->apply_speed( $id, $result, 'mobile' );
+			Speed_Status::set( $id, 'mobile', Speed_Status::DONE );
+		} finally {
+			Lock::release( $lock );
+		}
+
+		// Desktop goes to the queue so this request returns promptly.
+		Speed_Status::set( $id, 'desktop', Speed_Status::QUEUED );
+		Scheduler::enqueue( Job_Runner::LEAD_SPEED, [ $id, 'desktop', 0 ] );
+
+		return new WP_REST_Response(
+			[
+				'lead_id' => $id,
+				'mobile'  => $result,
+				'desktop' => [ 'state' => Speed_Status::QUEUED ],
+			]
+		);
+	}
+
+	/**
+	 * Run the next outstanding measurement.
+	 *
+	 * PageSpeed jobs are handed to WP-Cron, which spawns at most once a minute and dies part
+	 * way through a batch — so a queue of measurements that should take three seconds apart
+	 * trickles out at one or two a minute. While a LeadMap screen is open, the browser calls
+	 * this and becomes the worker instead. One measurement per call, rate limiter respected.
+	 */
+	public function speed_next( WP_REST_Request $request ): WP_REST_Response {
+		$pending = Speed_Status::pending_count();
+
+		if ( 0 === $pending ) {
+			return new WP_REST_Response( [ 'ran' => false, 'pending' => 0, 'idle' => true ] );
+		}
+
+		$wait = Rate_Limiter::wait_for( 'pagespeed' );
+
+		if ( $wait > 0 ) {
+			return new WP_REST_Response( [ 'ran' => false, 'pending' => $pending, 'retry_in' => $wait ] );
+		}
+
+		$next = Speed_Status::next_pending();
+
+		if ( ! $next ) {
+			return new WP_REST_Response( [ 'ran' => false, 'pending' => 0, 'idle' => true ] );
+		}
+
+		$lock = 'speed_' . $next['lead_id'] . '_' . $next['strategy'];
+
+		if ( ! Lock::acquire( $lock, 200 ) ) {
+			return new WP_REST_Response( [ 'ran' => false, 'pending' => $pending, 'retry_in' => 5 ] );
+		}
+
+		try {
+			Rate_Limiter::consume( 'pagespeed', (float) Settings::get( 'pagespeed_per_minute', 4 ) );
+
+			( new Job_Runner() )->run_speed( $next['lead_id'], $next['strategy'] );
+		} finally {
+			Lock::release( $lock );
+		}
+
+		return new WP_REST_Response(
+			[
+				'ran'      => true,
+				'lead_id'  => $next['lead_id'],
+				'strategy' => $next['strategy'],
+				'pending'  => Speed_Status::pending_count(),
+			]
+		);
+	}
+
+	/** Poll both strategies while they work through the queue. */
+	public function speed_status( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$id   = absint( $request->get_param( 'id' ) );
+		$lead = Lead_Repository::find( $id );
+
+		if ( ! $lead ) {
+			return new WP_Error( 'leadmap_not_found', __( 'Lead not found.', 'leadmap' ), [ 'status' => 404 ] );
+		}
+
+		$enrichment = json_decode( (string) $lead->enrichment_json, true );
+		$enrichment = is_array( $enrichment ) ? $enrichment : [];
+
+		$out = [ 'lead_id' => $id, 'running' => false, 'strategies' => [] ];
+
+		foreach ( Speed_Status::STRATEGIES as $strategy ) {
+			$state = Speed_Status::get( $enrichment, $strategy );
+
+			$out['strategies'][ $strategy ] = [
+				'state' => $state['state'],
+				'label' => Speed_Status::label( $state['state'] ),
+				'detail' => $state['detail'],
+				'score' => $enrichment[ 'speed_' . $strategy ]['score'] ?? null,
+			];
+
+			if ( Speed_Status::in_progress( $state['state'] ) ) {
+				$out['running'] = true;
+			}
+		}
+
+		$out['staleness'] = null === $lead->staleness_score ? null : (int) $lead->staleness_score;
+
+		return new WP_REST_Response( $out );
+	}
+
+	/** Record a triage verdict. */
+	public function triage( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$id    = absint( $request->get_param( 'id' ) );
+		$flags = (array) $request->get_param( 'flags' );
+		$note  = (string) $request->get_param( 'note' );
+
+		$result = ( new Triage_Service() )->decide( $id, $flags, $note );
+
+		if ( is_wp_error( $result ) ) {
+			return new WP_Error(
+				$result->get_error_code(),
+				$result->get_error_message(),
+				[ 'status' => 400 ]
+			);
+		}
+
+		$result['label'] = Verdicts::label( (string) $result['verdict'] );
+
+		return new WP_REST_Response( $result );
+	}
+
+	/** Put a lead back in the triage queue. */
+	public function triage_undo( WP_REST_Request $request ): WP_REST_Response {
+		$id   = absint( $request->get_param( 'id' ) );
+		$done = ( new Triage_Service() )->undo( $id );
+
+		return new WP_REST_Response( [ 'lead_id' => $id, 'undone' => $done ] );
 	}
 
 	/** Stop a running search. Anything already collected is kept. */

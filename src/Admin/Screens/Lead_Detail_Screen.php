@@ -14,7 +14,11 @@ use LeadMap\Events\Event_Repository;
 use LeadMap\Jobs\Job_Runner;
 use LeadMap\Leads\Lead_Email_Repository;
 use LeadMap\Leads\Lead_Repository;
+use LeadMap\Enrich\Speed_Status;
+use LeadMap\Enrich\Staleness_Scorer;
 use LeadMap\Support\Normalize;
+use LeadMap\Triage\Screenshotter;
+use LeadMap\Triage\Verdicts;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -64,6 +68,9 @@ final class Lead_Detail_Screen {
 
 			<div class="leadmap-detail__grid">
 				<div class="leadmap-detail__main">
+
+					<?php $this->render_screenshots( $lead, $enrichment ); ?>
+					<?php $this->render_triage( $lead ); ?>
 
 					<div class="leadmap-card">
 						<h2><?php esc_html_e( 'Contact', 'leadmap' ); ?></h2>
@@ -200,21 +207,80 @@ final class Lead_Detail_Screen {
 
 				<div class="leadmap-detail__side">
 					<div class="leadmap-card">
-						<h2><?php esc_html_e( 'Staleness', 'leadmap' ); ?></h2>
+						<h2><?php esc_html_e( 'Opportunity score', 'leadmap' ); ?></h2>
 
 						<?php if ( null === $lead->staleness_score ) : ?>
 							<p class="leadmap-muted"><?php esc_html_e( 'Not enriched yet.', 'leadmap' ); ?></p>
 						<?php else : ?>
-							<div class="leadmap-score leadmap-score--<?php echo esc_attr( $this->band( (int) $lead->staleness_score ) ); ?>">
-								<?php echo esc_html( (string) (int) $lead->staleness_score ); ?><span>/100</span>
+							<?php
+							$score      = (int) $lead->staleness_score;
+							$categories = is_array( $enrichment['score_categories'] ?? null ) ? $enrichment['score_categories'] : [];
+							$confidence = (int) ( $enrichment['score_confidence'] ?? 100 );
+							$labels     = Staleness_Scorer::labels();
+							$weights    = Staleness_Scorer::weights();
+							?>
+							<div class="leadmap-score leadmap-score--<?php echo esc_attr( $this->band( $score ) ); ?>"
+								data-leadmap-score>
+								<?php echo esc_html( (string) $score ); ?><span>/100</span>
 							</div>
-							<p class="leadmap-muted"><?php esc_html_e( 'Higher means more outdated, so more worth pitching.', 'leadmap' ); ?></p>
+							<p class="leadmap-muted">
+								<?php esc_html_e( 'Higher means more wrong with the site, so more worth pitching.', 'leadmap' ); ?>
+							</p>
+
+							<?php if ( $categories ) : ?>
+								<table class="leadmap-breakdown">
+									<tbody>
+										<?php foreach ( $labels as $key => $label ) : ?>
+											<?php
+											$category = $categories[ $key ] ?? null;
+
+											if ( ! is_array( $category ) ) {
+												continue;
+											}
+
+											$available = ! empty( $category['available'] );
+											$value     = (int) ( $category['score'] ?? 0 );
+											?>
+											<tr class="<?php echo $available ? '' : 'is-missing'; ?>">
+												<th scope="row">
+													<?php echo esc_html( $label ); ?>
+													<span class="leadmap-breakdown__weight"><?php echo esc_html( (string) ( $weights[ $key ] ?? 0 ) ); ?>%</span>
+												</th>
+												<td>
+													<?php if ( $available ) : ?>
+														<div class="leadmap-meter leadmap-meter--<?php echo esc_attr( $this->band( $value ) ); ?>">
+															<span style="width: <?php echo esc_attr( (string) $value ); ?>%"></span>
+														</div>
+													<?php else : ?>
+														<span class="leadmap-muted">—</span>
+													<?php endif; ?>
+												</td>
+												<td class="leadmap-breakdown__summary">
+													<?php echo esc_html( (string) ( $category['summary'] ?? '' ) ); ?>
+												</td>
+											</tr>
+										<?php endforeach; ?>
+									</tbody>
+								</table>
+							<?php endif; ?>
+
+							<?php if ( $confidence < 100 ) : ?>
+								<p class="leadmap-muted leadmap-confidence">
+									<?php
+									printf(
+										/* translators: %d: percentage of the checks that produced data. */
+										esc_html__( 'Based on %d%% of the checks — the rest have not run yet, and are not counted against the site.', 'leadmap' ),
+										$confidence
+									);
+									?>
+								</p>
+							<?php endif; ?>
 
 							<?php if ( $signals ) : ?>
 								<ul class="leadmap-signals">
-									<?php foreach ( $signals as $signal ) : ?>
+									<?php foreach ( array_slice( $signals, 0, 6 ) as $signal ) : ?>
 										<li>
-											<span class="leadmap-signal__weight">+<?php echo esc_html( (string) (int) ( $signal['weight'] ?? 0 ) ); ?></span>
+											<span class="leadmap-signal__weight"><?php echo esc_html( (string) (int) ( $signal['weight'] ?? 0 ) ); ?></span>
 											<?php echo esc_html( (string) ( $signal['label'] ?? '' ) ); ?>
 										</li>
 									<?php endforeach; ?>
@@ -233,49 +299,41 @@ final class Lead_Detail_Screen {
 	}
 
 	/**
-	 * PageSpeed, laid out the way Insights itself does it: one gauge per strategy, with the
-	 * same colour thresholds (red under 50, amber under 90, green above).
+	 * PageSpeed, laid out the way Insights itself does it, with the state of each run.
+	 *
+	 * A blank score used to be ambiguous — queued, rate-limited and permanently failed all
+	 * looked the same. Each strategy now says where it is, and can be re-run by hand.
 	 *
 	 * @param array<string,mixed> $enrichment
 	 */
 	private function render_speed( array $enrichment ): void {
+		$lead_id = isset( $_GET['lead'] ) ? absint( $_GET['lead'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
 		$mobile  = is_array( $enrichment['speed_mobile'] ?? null ) ? $enrichment['speed_mobile'] : null;
 		$desktop = is_array( $enrichment['speed_desktop'] ?? null ) ? $enrichment['speed_desktop'] : null;
 
-		$errors = array_filter( [
-			__( 'Mobile', 'leadmap' )  => (string) ( $enrichment['speed_mobile_error']['reason'] ?? '' ),
-			__( 'Desktop', 'leadmap' ) => (string) ( $enrichment['speed_desktop_error']['reason'] ?? '' ),
-		] );
-
-		// Nothing measured and nothing failed means the job simply has not run yet. Say that,
-		// rather than hiding the whole card and leaving the operator guessing.
-		$pending = ! $mobile && ! $desktop && ! $errors;
-
-		if ( $pending ) {
-			?>
-			<div class="leadmap-card">
-				<h2><?php esc_html_e( 'Google PageSpeed', 'leadmap' ); ?></h2>
-				<p class="leadmap-muted">
-					<?php esc_html_e( 'Not measured yet. PageSpeed runs as a background job and takes up to a minute per site, twice per lead. If this stays empty, check that background jobs are running.', 'leadmap' ); ?>
-				</p>
-			</div>
-			<?php
-			return;
-		}
+		$states = [
+			'mobile'  => Speed_Status::get( $enrichment, 'mobile' ),
+			'desktop' => Speed_Status::get( $enrichment, 'desktop' ),
+		];
 
 		?>
-		<div class="leadmap-card">
-			<h2><?php esc_html_e( 'Google PageSpeed', 'leadmap' ); ?></h2>
+		<div class="leadmap-card leadmap-speed-panel" data-leadmap-speed data-lead-id="<?php echo esc_attr( (string) $lead_id ); ?>">
+			<h2>
+				<?php esc_html_e( 'Google PageSpeed', 'leadmap' ); ?>
+				<button type="button" class="button button-small" data-leadmap-check-speed>
+					<?php echo esc_html( ( $mobile || $desktop ) ? __( 'Re-check', 'leadmap' ) : __( 'Check now', 'leadmap' ) ); ?>
+				</button>
+			</h2>
 
 			<div class="leadmap-psi">
 				<?php
-				$this->render_gauge( __( 'Mobile', 'leadmap' ), $mobile );
-				$this->render_gauge( __( 'Desktop', 'leadmap' ), $desktop );
+				$this->render_gauge( __( 'Mobile', 'leadmap' ), $mobile, $states['mobile'], 'mobile' );
+				$this->render_gauge( __( 'Desktop', 'leadmap' ), $desktop, $states['desktop'], 'desktop' );
 				?>
 			</div>
 
 			<?php
-			// Mobile metrics are the ones worth quoting — it is how most local searches happen.
 			$detail = $mobile ?: $desktop;
 
 			if ( $detail && null !== ( $detail['score'] ?? null ) ) :
@@ -290,13 +348,7 @@ final class Lead_Detail_Screen {
 				];
 				?>
 				<p class="leadmap-psi__label">
-					<?php
-					echo esc_html(
-						$mobile
-							? __( 'Core Web Vitals — mobile', 'leadmap' )
-							: __( 'Core Web Vitals — desktop', 'leadmap' )
-					);
-					?>
+					<?php echo esc_html( $mobile ? __( 'Core Web Vitals — mobile', 'leadmap' ) : __( 'Core Web Vitals — desktop', 'leadmap' ) ); ?>
 				</p>
 				<table class="widefat striped leadmap-psi__metrics">
 					<tbody>
@@ -337,13 +389,15 @@ final class Lead_Detail_Screen {
 				<?php endif; ?>
 			<?php endif; ?>
 
-			<?php foreach ( $errors as $label => $reason ) : ?>
-				<div class="notice notice-warning inline leadmap-psi__error">
-					<p>
-						<strong><?php echo esc_html( sprintf( '%s:', $label ) ); ?></strong>
-						<?php echo esc_html( $reason ); ?>
-					</p>
-				</div>
+			<?php foreach ( $states as $strategy => $state ) : ?>
+				<?php if ( Speed_Status::FAILED === $state['state'] && '' !== $state['detail'] ) : ?>
+					<div class="notice notice-warning inline leadmap-psi__error">
+						<p>
+							<strong><?php echo esc_html( 'mobile' === $strategy ? __( 'Mobile:', 'leadmap' ) : __( 'Desktop:', 'leadmap' ) ); ?></strong>
+							<?php echo esc_html( $state['detail'] ); ?>
+						</p>
+					</div>
+				<?php endif; ?>
 			<?php endforeach; ?>
 
 			<?php $url = (string) ( $mobile['final_url'] ?? $desktop['final_url'] ?? '' ); ?>
@@ -364,13 +418,14 @@ final class Lead_Detail_Screen {
 	 *
 	 * @param array<string,mixed>|null $data
 	 */
-	private function render_gauge( string $label, ?array $data ): void {
-		$score = is_array( $data ) ? ( $data['score'] ?? null ) : null;
+	private function render_gauge( string $label, ?array $data, array $state = [], string $strategy = '' ): void {
+		$score   = is_array( $data ) ? ( $data['score'] ?? null ) : null;
+		$pending = Speed_Status::in_progress( (string) ( $state['state'] ?? '' ) );
 
 		?>
-		<div class="leadmap-gauge">
+		<div class="leadmap-gauge" data-leadmap-gauge="<?php echo esc_attr( $strategy ); ?>">
 			<?php if ( null === $score ) : ?>
-				<div class="leadmap-gauge__ring leadmap-gauge__ring--empty">
+				<div class="leadmap-gauge__ring leadmap-gauge__ring--empty<?php echo $pending ? ' is-pending' : ''; ?>">
 					<span class="leadmap-gauge__num">—</span>
 				</div>
 			<?php else : ?>
@@ -393,6 +448,14 @@ final class Lead_Detail_Screen {
 				</div>
 			<?php endif; ?>
 			<span class="leadmap-gauge__label"><?php echo esc_html( $label ); ?></span>
+
+			<?php if ( null === $score && ! empty( $state['state'] ) ) : ?>
+				<span class="leadmap-gauge__state" data-leadmap-gauge-state>
+					<?php echo esc_html( Speed_Status::label( (string) $state['state'] ) ); ?>
+				</span>
+			<?php elseif ( null === $score ) : ?>
+				<span class="leadmap-gauge__state" data-leadmap-gauge-state><?php esc_html_e( 'Not measured', 'leadmap' ); ?></span>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -403,6 +466,141 @@ final class Lead_Detail_Screen {
 			'raw_ms' => number_format( $value ) . ' ms',
 			default  => number_format( $value / 1000, 1 ) . ' s',
 		};
+	}
+
+	/**
+	 * What the site actually looks like.
+	 *
+	 * The mobile view is the one that decides most triage calls, so it must be a real render
+	 * at a phone viewport and not a desktop capture cropped to a tall rectangle — that shows
+	 * none of what a mobile visitor sees while looking convincing.
+	 */
+	private function render_screenshots( object $lead, array $enrichment ): void {
+		$website = (string) $lead->website;
+
+		if ( '' === $website ) {
+			return;
+		}
+
+		$shots       = new Screenshotter();
+		$desktop_src = $shots->for_lead( $lead, $enrichment, 'desktop' );
+		$mobile_src  = $shots->for_lead( $lead, $enrichment, 'mobile' );
+
+		$desktop = $desktop_src['url'];
+		$mobile  = $mobile_src['real'] ? $mobile_src['url'] : '';
+
+		?>
+		<div class="leadmap-card leadmap-shots" data-leadmap-shots
+			data-website="<?php echo esc_attr( $website ); ?>"
+			data-lead-id="<?php echo esc_attr( (string) (int) $lead->id ); ?>">
+
+			<h2>
+				<?php esc_html_e( 'The website', 'leadmap' ); ?>
+				<button type="button" class="button button-small" data-leadmap-reshoot>
+					<?php esc_html_e( 'Refresh', 'leadmap' ); ?>
+				</button>
+			</h2>
+
+			<?php if ( '' === $desktop ) : ?>
+				<p class="leadmap-muted">
+					<?php esc_html_e( 'Screenshots are turned off. Enable a provider under Settings, or open the site directly.', 'leadmap' ); ?>
+				</p>
+			<?php else : ?>
+				<div class="leadmap-shots__pair">
+					<figure class="leadmap-shots__desktop">
+						<img src="<?php echo esc_url( $desktop ); ?>" loading="lazy" data-leadmap-shot data-viewport="desktop"
+							alt="<?php echo esc_attr( sprintf( /* translators: %s: business name. */ __( 'Desktop view of %s', 'leadmap' ), (string) $lead->name ) ); ?>" />
+						<figcaption><?php esc_html_e( 'Desktop', 'leadmap' ); ?></figcaption>
+					</figure>
+
+					<figure class="leadmap-shots__mobile">
+						<?php if ( '' !== $mobile ) : ?>
+							<img src="<?php echo esc_url( $mobile ); ?>" loading="lazy" data-leadmap-shot data-viewport="mobile"
+								alt="<?php echo esc_attr( sprintf( /* translators: %s: business name. */ __( 'Mobile view of %s', 'leadmap' ), (string) $lead->name ) ); ?>" />
+						<?php else : ?>
+							<div class="leadmap-shots__nomobile">
+								<p><?php esc_html_e( 'This provider cannot render at a phone viewport.', 'leadmap' ); ?></p>
+							</div>
+						<?php endif; ?>
+						<figcaption>
+							<?php esc_html_e( 'Mobile', 'leadmap' ); ?>
+							<button type="button" class="button-link" data-leadmap-live-mobile>
+								<?php esc_html_e( 'Open live at phone width', 'leadmap' ); ?>
+							</button>
+						</figcaption>
+					</figure>
+				</div>
+
+				<p class="leadmap-muted leadmap-shots__note">
+					<?php if ( 'pagespeed' === $mobile_src['source'] || 'pagespeed' === $desktop_src['source'] ) : ?>
+						<?php esc_html_e( 'Captured by Google during the PageSpeed run — a real render at each viewport, not a resized desktop shot. Re-check speed to capture it again.', 'leadmap' ); ?>
+					<?php else : ?>
+						<?php esc_html_e( 'Generated on demand and cached by the provider. Run a PageSpeed check to replace these with Google\'s own render, which is more accurate on mobile.', 'leadmap' ); ?>
+					<?php endif; ?>
+				</p>
+
+				<div class="leadmap-shots__live" hidden>
+					<iframe title="<?php esc_attr_e( 'Live mobile preview', 'leadmap' ); ?>"
+						sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" loading="lazy"></iframe>
+					<p class="leadmap-muted">
+						<?php esc_html_e( 'Rendered live in your browser at 390px wide — this is genuinely what a phone gets. Some sites refuse to be framed and will show blank.', 'leadmap' ); ?>
+					</p>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/** Triage from the lead page, so the grid is a shortcut rather than the only route. */
+	private function render_triage( object $lead ): void {
+		if ( ! current_user_can( 'leadmap_audit' ) ) {
+			return;
+		}
+
+		$verdict = (string) $lead->triage_verdict;
+		$flags   = array_filter( explode( ',', (string) $lead->triage_flags ) );
+
+		?>
+		<div class="leadmap-card leadmap-triage-panel" data-leadmap-triage data-lead-id="<?php echo esc_attr( (string) (int) $lead->id ); ?>">
+			<h2>
+				<?php esc_html_e( 'Triage', 'leadmap' ); ?>
+				<?php if ( '' !== $verdict ) : ?>
+					<span class="leadmap-status leadmap-status--triaged" data-leadmap-triage-current>
+						<?php echo esc_html( Verdicts::label( $verdict ) ); ?>
+					</span>
+				<?php endif; ?>
+			</h2>
+
+			<p class="leadmap-muted">
+				<?php esc_html_e( 'Is this worth pitching? Pick everything that applies, or skip it.', 'leadmap' ); ?>
+			</p>
+
+			<div class="leadmap-card-triage__actions">
+				<?php foreach ( Verdicts::flags() as $id => $flag ) : ?>
+					<button type="button" class="leadmap-verdict<?php echo in_array( $id, $flags, true ) ? ' is-on' : ''; ?>"
+						data-verdict="<?php echo esc_attr( $id ); ?>" title="<?php echo esc_attr( $flag['hint'] ); ?>"
+						aria-pressed="<?php echo in_array( $id, $flags, true ) ? 'true' : 'false'; ?>">
+						<?php echo esc_html( $flag['label'] ); ?>
+					</button>
+				<?php endforeach; ?>
+			</div>
+
+			<div class="leadmap-card-triage__terminal">
+				<?php foreach ( Verdicts::terminal() as $id => $terminal ) : ?>
+					<button type="button" class="leadmap-verdict leadmap-verdict--terminal<?php echo $verdict === $id ? ' is-on' : ''; ?>"
+						data-terminal="<?php echo esc_attr( $id ); ?>" title="<?php echo esc_attr( $terminal['hint'] ); ?>">
+						<?php echo esc_html( $terminal['label'] ); ?>
+					</button>
+				<?php endforeach; ?>
+
+				<button type="button" class="button button-primary" data-leadmap-triage-save>
+					<?php echo esc_html( '' === $verdict ? __( 'Save verdict', 'leadmap' ) : __( 'Update verdict', 'leadmap' ) ); ?>
+				</button>
+			</div>
+
+			<p class="leadmap-triage-panel__status" data-leadmap-triage-status aria-live="polite"></p>
+		</div>
+		<?php
 	}
 
 	/** @param array<string,mixed> $enrichment */

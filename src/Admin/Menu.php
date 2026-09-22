@@ -14,7 +14,9 @@ use LeadMap\Admin\Screens\Leads_Screen;
 use LeadMap\Admin\Screens\New_Search_Screen;
 use LeadMap\Admin\Screens\Searches_Screen;
 use LeadMap\Admin\Screens\Settings_Screen;
+use LeadMap\Admin\Screens\Triage_Screen;
 use LeadMap\Rest\Rest_Controller;
+use LeadMap\Triage\Triage_Service;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -35,6 +37,7 @@ final class Menu {
 			'leadmap'            => new Leads_Screen(),
 			'leadmap-new-search' => new New_Search_Screen(),
 			'leadmap-searches'   => new Searches_Screen(),
+			'leadmap-triage'     => new Triage_Screen(),
 			'leadmap-settings'   => new Settings_Screen(),
 			'leadmap-lead'       => new Lead_Detail_Screen(),
 		];
@@ -52,6 +55,7 @@ final class Menu {
 		add_submenu_page( self::SLUG, __( 'Leads', 'leadmap' ), __( 'Leads', 'leadmap' ), 'leadmap_manage', 'leadmap', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'New Search', 'leadmap' ), __( 'New Search', 'leadmap' ), 'leadmap_search', 'leadmap-new-search', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'Searches', 'leadmap' ), __( 'Searches', 'leadmap' ), 'leadmap_search', 'leadmap-searches', [ $this, 'render' ] );
+		add_submenu_page( self::SLUG, __( 'Triage', 'leadmap' ), $this->triage_label(), 'leadmap_audit', 'leadmap-triage', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'Settings', 'leadmap' ), __( 'Settings', 'leadmap' ), 'leadmap_settings', 'leadmap-settings', [ $this, 'render' ] );
 
 		// Reachable by URL from the leads list, but not shown as its own menu item.
@@ -106,6 +110,11 @@ final class Menu {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 
+		// Any LeadMap screen can drive the PageSpeed queue while it is open.
+		if ( current_user_can( 'leadmap_audit' ) ) {
+			$this->enqueue_worker();
+		}
+
 		if ( 'leadmap-new-search' === $page ) {
 			$this->enqueue_map();
 		}
@@ -113,6 +122,111 @@ final class Menu {
 		if ( 'leadmap-searches' === $page ) {
 			$this->enqueue_live();
 		}
+
+		if ( 'leadmap-triage' === $page ) {
+			$this->enqueue_triage();
+		}
+
+		if ( 'leadmap-lead' === $page ) {
+			$this->enqueue_lead();
+		}
+	}
+
+	private function enqueue_worker(): void {
+		wp_enqueue_script(
+			'leadmap-worker',
+			LEADMAP_URL . 'src/Admin/assets/speed-worker.js',
+			[],
+			self::asset_version( 'src/Admin/assets/speed-worker.js' ),
+			true
+		);
+
+		wp_localize_script(
+			'leadmap-worker',
+			'leadmapWorker',
+			[
+				'nextUrl' => rest_url( Rest_Controller::NAMESPACE . '/speed/next' ),
+				'nonce'   => wp_create_nonce( 'wp_rest' ),
+				'i18n'    => [
+					/* translators: %d: how many measurements are still queued. */
+					'working' => __( 'Measuring PageSpeed — %d left', 'leadmap' ),
+				],
+			]
+		);
+	}
+
+	private function enqueue_lead(): void {
+		wp_enqueue_script(
+			'leadmap-lead',
+			LEADMAP_URL . 'src/Admin/assets/lead.js',
+			[],
+			self::asset_version( 'src/Admin/assets/lead.js' ),
+			true
+		);
+
+		wp_localize_script(
+			'leadmap-lead',
+			'leadmapLead',
+			[
+				'nonce'          => wp_create_nonce( 'wp_rest' ),
+				'speedUrl'       => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/speed' ),
+				'speedStatusUrl' => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/speed/status' ),
+				'triageUrl'      => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/triage' ),
+				'i18n'           => [
+					'refresh'    => __( 'Refresh', 'leadmap' ),
+					'refreshing' => __( 'Regenerating…', 'leadmap' ),
+					'openLive'   => __( 'Open live at phone width', 'leadmap' ),
+					'closeLive'  => __( 'Close live preview', 'leadmap' ),
+					'measuring'  => __( 'Measuring…', 'leadmap' ),
+					'queued'     => __( 'Queued', 'leadmap' ),
+					'checkAgain' => __( 'Try again', 'leadmap' ),
+					'saving'     => __( 'Saving…', 'leadmap' ),
+					'savedAs'    => __( 'Saved as %s', 'leadmap' ),
+					'pickOne'    => __( 'Pick at least one verdict first.', 'leadmap' ),
+					'failed'     => __( 'That did not work', 'leadmap' ),
+				],
+			]
+		);
+	}
+
+	/** Show the waiting count in the menu, the way comments do. */
+	private function triage_label(): string {
+		$waiting = ( new Triage_Service() )->queue_size();
+
+		if ( $waiting < 1 ) {
+			return __( 'Triage', 'leadmap' );
+		}
+
+		return sprintf(
+			/* translators: %s: number of leads awaiting triage. */
+			__( 'Triage %s', 'leadmap' ),
+			'<span class="awaiting-mod"><span class="pending-count">' . esc_html( (string) $waiting ) . '</span></span>'
+		);
+	}
+
+	private function enqueue_triage(): void {
+		wp_enqueue_script(
+			'leadmap-triage',
+			LEADMAP_URL . 'src/Admin/assets/triage.js',
+			[],
+			self::asset_version( 'src/Admin/assets/triage.js' ),
+			true
+		);
+
+		wp_localize_script(
+			'leadmap-triage',
+			'leadmapTriage',
+			[
+				'decideUrl' => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/triage' ),
+				'undoUrl'   => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/triage/undo' ),
+				'nonce'     => wp_create_nonce( 'wp_rest' ),
+				'i18n'      => [
+					'saved'  => __( 'Marked as %s', 'leadmap' ),
+					'undone' => __( 'Put back in the queue', 'leadmap' ),
+					'failed' => __( 'Could not save that verdict', 'leadmap' ),
+				],
+			]
+		);
 	}
 
 	/** Leaflet plus our own preview logic. Bundled, so the admin works offline. */

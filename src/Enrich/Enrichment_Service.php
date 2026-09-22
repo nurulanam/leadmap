@@ -19,6 +19,7 @@ use LeadMap\Leads\Lead_Repository;
 use LeadMap\Support\Logger;
 use LeadMap\Support\Normalize;
 use LeadMap\Support\Settings;
+use LeadMap\Triage\Screenshot_Store;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -141,12 +142,41 @@ final class Enrichment_Service {
 		$enrichment = json_decode( (string) $lead->enrichment_json, true );
 		$enrichment = is_array( $enrichment ) ? $enrichment : [];
 
+		// Keep the screenshot out of the row: it is a megabyte of base64 and belongs on disk.
+		$screenshot = (string) ( $speed['screenshot'] ?? '' );
+		unset( $speed['screenshot'] );
+
+		if ( '' !== $screenshot ) {
+			$stored = Screenshot_Store::save( $lead_id, $strategy, $screenshot );
+
+			if ( '' !== $stored ) {
+				$enrichment[ 'shot_' . $strategy ] = $stored;
+			}
+		}
+
 		$enrichment[ 'speed_' . $strategy ] = $speed;
 
 		// A later success clears an earlier failure note.
 		unset( $enrichment[ 'speed_' . $strategy . '_error' ] );
 
+		$this->rescore( $lead_id, $enrichment );
+	}
+
+	/**
+	 * Recompute the opportunity score and store the breakdown alongside it.
+	 *
+	 * Called whenever new evidence lands — a crawl, a PageSpeed result — so the score always
+	 * reflects everything known so far rather than only what was available at enrichment.
+	 *
+	 * @param array<string,mixed> $enrichment
+	 *
+	 * @return array<string,mixed> The stored enrichment.
+	 */
+	private function rescore( int $lead_id, array $enrichment ): array {
 		$scored = $this->staleness->score( $enrichment );
+
+		$enrichment['score_categories'] = $scored['categories'];
+		$enrichment['score_confidence'] = $scored['confidence'];
 
 		Lead_Repository::update(
 			$lead_id,
@@ -156,6 +186,8 @@ final class Enrichment_Service {
 				'staleness_json'  => wp_json_encode( $scored['signals'] ),
 			]
 		);
+
+		return $enrichment;
 	}
 
 	/** Note why a PageSpeed run produced nothing, so the UI can say so. */
@@ -184,6 +216,9 @@ final class Enrichment_Service {
 	private function finish( int $lead_id, array $enrichment, array $fields, string $status, int $emails_found = 0 ): bool {
 		$scored = $this->staleness->score( $enrichment );
 
+		$enrichment['score_categories'] = $scored['categories'];
+		$enrichment['score_confidence'] = $scored['confidence'];
+
 		Lead_Repository::update(
 			$lead_id,
 			array_merge(
@@ -205,6 +240,8 @@ final class Enrichment_Service {
 				'emails_found'    => $emails_found,
 				'staleness_score' => $scored['score'],
 				'status'          => $status,
+				'seconds'         => $enrichment['elapsed'] ?? null,
+				'pages'           => count( (array) ( $enrichment['pages_crawled'] ?? [] ) ),
 			]
 		);
 

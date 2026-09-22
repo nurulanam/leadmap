@@ -685,3 +685,446 @@ body.leadmap-modal-open { overflow: hidden; }
 
 /* Stop sits hard right, with Close beside it. */
 .leadmap-live__stop { margin-left: auto; }
+
+/* ---------- Triage grid ---------- */
+
+.leadmap-triage__intro { max-width: 760px; }
+
+.leadmap-triage__bar {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+.leadmap-triage__bar .leadmap-tiles { margin: 12px 0; }
+.leadmap-triage__help-toggle { margin-left: auto; }
+
+.leadmap-triage__help {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 12px 16px;
+	margin-bottom: 12px;
+}
+
+.leadmap-triage__help ul {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 22px;
+	margin: 0;
+	font-size: 13px;
+}
+
+.leadmap-triage__help li { margin: 0; }
+
+kbd {
+	display: inline-block;
+	min-width: 16px;
+	padding: 1px 5px;
+	margin-right: 4px;
+	border: 1px solid #c3c4c7;
+	border-bottom-width: 2px;
+	border-radius: 3px;
+	background: #f6f7f7;
+	font-family: Menlo, Consolas, monaco, monospace;
+	font-size: 11px;
+	line-height: 1.5;
+	color: #3c434a;
+	text-align: center;
+}
+
+.leadmap-grid {
+	display: grid;
+	grid-template-columns: repeat( auto-fill, minmax( 320px, 1fr ) );
+	gap: 16px;
+	margin: 8px 0 16px;
+}
+
+.leadmap-card-triage {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 6px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	transition: box-shadow .15s ease, opacity .25s ease;
+	outline: none;
+}
+
+.leadmap-card-triage.is-current {
+	box-shadow: 0 0 0 2px #2271b1;
+	border-color: #2271b1;
+}
+
+.leadmap-card-triage.is-done {
+	opacity: .35;
+	pointer-events: none;
+}
+
+.leadmap-card-triage.is-error {
+	border-color: #d63638;
+	box-shadow: 0 0 0 2px rgba( 214, 54, 56, .25 );
+}
+
+/* Screenshots: desktop wide, mobile inset beside it — the mobile view is usually the tell */
+.leadmap-shot {
+	position: relative;
+	height: 200px;
+	background: #f0f0f1;
+	overflow: hidden;
+	border-bottom: 1px solid #dcdcde;
+}
+
+.leadmap-shot__desktop {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: top center;
+	display: block;
+}
+
+.leadmap-shot__mobile {
+	position: absolute;
+	right: 10px;
+	bottom: 10px;
+	width: 62px;
+	height: 112px;
+	object-fit: cover;
+	object-position: top center;
+	border: 2px solid #fff;
+	border-radius: 6px;
+	box-shadow: 0 2px 8px rgba( 0, 0, 0, .3 );
+	background: #fff;
+}
+
+.leadmap-shot__frame {
+	width: 133%;
+	height: 133%;
+	border: 0;
+	transform: scale( .75 );
+	transform-origin: top left;
+	pointer-events: none;
+}
+
+.leadmap-shot.has-no-shot .leadmap-shot__desktop,
+.leadmap-shot.has-no-shot .leadmap-shot__mobile { display: none; }
+
+.leadmap-shot.has-no-shot::after {
+	content: attr( data-fallback );
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #8c8f94;
+	font-size: 13px;
+}
+
+.leadmap-shot__none {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	gap: 4px;
+	color: #646970;
+}
+
+.leadmap-shot__score {
+	position: absolute;
+	top: 10px;
+	left: 10px;
+	box-shadow: 0 1px 4px rgba( 0, 0, 0, .2 );
+}
+
+.leadmap-card-triage__head {
+	padding: 10px 12px 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 48px;
+}
+
+.leadmap-card-triage__name {
+	font-size: 13px;
+	line-height: 1.3;
+}
+
+.leadmap-card-triage__signals {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	padding: 0 12px 10px;
+	min-height: 26px;
+}
+
+.leadmap-badge {
+	display: inline-block;
+	padding: 1px 7px;
+	border-radius: 9px;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 11px;
+	line-height: 1.6;
+}
+
+.leadmap-badge--more { background: transparent; color: #8c8f94; }
+
+.leadmap-card-triage__actions,
+.leadmap-card-triage__terminal {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	padding: 8px 12px;
+	border-top: 1px solid #f0f0f1;
+	align-items: center;
+}
+
+.leadmap-verdict {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px 8px;
+	border: 1px solid #c3c4c7;
+	border-radius: 3px;
+	background: #f6f7f7;
+	color: #3c434a;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.leadmap-verdict:hover { border-color: #2271b1; color: #2271b1; }
+
+.leadmap-verdict.is-on {
+	background: #2271b1;
+	border-color: #2271b1;
+	color: #fff;
+}
+
+.leadmap-verdict.is-on kbd {
+	background: rgba( 255, 255, 255, .2 );
+	border-color: rgba( 255, 255, 255, .4 );
+	color: #fff;
+}
+
+.leadmap-verdict--terminal { background: #fff; }
+
+.leadmap-card-triage__open {
+	font-size: 12px;
+	margin-left: auto;
+}
+
+.leadmap-card-triage__save { margin-left: 4px; }
+
+.leadmap-triage__more { color: #646970; }
+
+.leadmap-empty {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 6px;
+	padding: 40px 24px;
+	text-align: center;
+	max-width: 620px;
+	margin: 16px auto;
+}
+
+.leadmap-empty h2 { margin-top: 0; }
+
+/* Undo toast */
+.leadmap-toast {
+	position: fixed;
+	left: 50%;
+	bottom: 28px;
+	transform: translateX( -50% );
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	background: #1d2327;
+	color: #fff;
+	padding: 10px 16px;
+	border-radius: 4px;
+	box-shadow: 0 4px 16px rgba( 0, 0, 0, .3 );
+	font-size: 13px;
+}
+
+.leadmap-toast .button-link { color: #72aee6; }
+
+@media ( prefers-reduced-motion: reduce ) {
+	.leadmap-card-triage { transition: none; }
+}
+
+/* ---------- Score breakdown ---------- */
+
+.leadmap-breakdown { width: 100%; border-collapse: collapse; margin: 6px 0 4px; }
+
+.leadmap-breakdown th {
+	width: 32%;
+	text-align: left;
+	font-weight: 400;
+	font-size: 12px;
+	padding: 4px 8px 4px 0;
+	white-space: nowrap;
+}
+
+.leadmap-breakdown td { padding: 4px 0; vertical-align: middle; }
+
+.leadmap-breakdown__weight { color: #a7aaad; font-size: 11px; margin-left: 4px; }
+
+.leadmap-breakdown__summary {
+	padding-left: 8px;
+	font-size: 12px;
+	color: #646970;
+	width: 38%;
+}
+
+.leadmap-breakdown tr.is-missing th,
+.leadmap-breakdown tr.is-missing .leadmap-breakdown__summary { color: #a7aaad; }
+
+.leadmap-meter--high span { background: #d63638; }
+.leadmap-meter--mid span  { background: #dba617; }
+.leadmap-meter--low span  { background: #00a32a; }
+
+.leadmap-confidence { font-style: italic; }
+
+/* ---------- Lead detail: screenshots ---------- */
+
+.leadmap-shots h2,
+.leadmap-speed-panel h2,
+.leadmap-triage-panel h2 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.leadmap-shots h2 .button,
+.leadmap-speed-panel h2 .button { margin-left: auto; }
+
+.leadmap-shots__pair {
+	display: grid;
+	grid-template-columns: 1fr 210px;
+	gap: 14px;
+	align-items: start;
+}
+
+@media screen and ( max-width: 782px ) {
+	.leadmap-shots__pair { grid-template-columns: 1fr; }
+}
+
+.leadmap-shots figure { margin: 0; }
+
+.leadmap-shots img {
+	width: 100%;
+	display: block;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+	transition: opacity .2s ease;
+}
+
+.leadmap-shots img.is-loading { opacity: .35; }
+
+.leadmap-shots__mobile img {
+	max-width: 200px;
+	margin: 0 auto;
+}
+
+.leadmap-shots figcaption {
+	margin-top: 6px;
+	font-size: 12px;
+	color: #646970;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.leadmap-shots__nomobile {
+	border: 1px dashed #c3c4c7;
+	border-radius: 4px;
+	padding: 20px 12px;
+	text-align: center;
+	color: #646970;
+	font-size: 12px;
+}
+
+.leadmap-shots__note { margin-top: 10px; }
+
+.leadmap-shots__live { margin-top: 12px; }
+
+.leadmap-shots__live iframe {
+	width: 390px;
+	max-width: 100%;
+	height: 620px;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	background: #fff;
+	display: block;
+}
+
+/* ---------- Speed panel ---------- */
+
+.leadmap-gauge__state {
+	display: block;
+	font-size: 11px;
+	color: #8c8f94;
+	margin-top: 2px;
+}
+
+.leadmap-gauge__ring--empty.is-pending {
+	border-style: dashed;
+	animation: leadmap-spin 3s linear infinite;
+}
+
+.leadmap-speed--pending { background: #e5f0fb; color: #0a4b78; }
+.leadmap-speed--failed  { background: #fbeaea; color: #8a1f11; }
+
+/* ---------- Triage panel on the lead page ---------- */
+
+.leadmap-triage-panel .leadmap-card-triage__actions,
+.leadmap-triage-panel .leadmap-card-triage__terminal {
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.leadmap-triage-panel__status {
+	margin: 6px 0 0;
+	font-size: 12px;
+	min-height: 18px;
+	color: #646970;
+}
+
+.leadmap-triage-panel__status.is-ok    { color: #135e1e; }
+.leadmap-triage-panel__status.is-error { color: #8a1f11; }
+
+/* Background PageSpeed worker indicator */
+.leadmap-worker {
+	position: fixed;
+	right: 16px;
+	bottom: 16px;
+	z-index: 99990;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	background: #1d2327;
+	color: #f0f0f1;
+	font-size: 12px;
+	padding: 7px 12px;
+	border-radius: 20px;
+	box-shadow: 0 2px 10px rgba( 0, 0, 0, .25 );
+	opacity: .9;
+}
+
+.leadmap-worker::before {
+	content: '';
+	width: 9px;
+	height: 9px;
+	border: 2px solid rgba( 255, 255, 255, .25 );
+	border-top-color: #72aee6;
+	border-radius: 50%;
+	animation: leadmap-spin .9s linear infinite;
+}
+
+@media ( prefers-reduced-motion: reduce ) {
+	.leadmap-worker::before { animation: none; }
+}

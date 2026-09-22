@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
 final class Schema {
 
 	/** Bumped whenever a table definition below changes. */
-	public const DB_VERSION = 5;
+	public const DB_VERSION = 6;
 
 	public static function table( string $name ): string {
 		global $wpdb;
@@ -85,6 +85,7 @@ final class Schema {
 			status VARCHAR(30) NOT NULL DEFAULT 'new',
 			enrichment_json LONGTEXT NULL,
 			enriched_at DATETIME NULL,
+			speed_pending VARCHAR(20) NOT NULL DEFAULT '',
 			staleness_score TINYINT UNSIGNED NULL,
 			staleness_json LONGTEXT NULL,
 			triage_verdict VARCHAR(30) NOT NULL DEFAULT '',
@@ -106,6 +107,7 @@ final class Schema {
 			KEY phone_e164 (phone_e164),
 			KEY status_next_action (status, next_action_at),
 			KEY status_staleness (status, staleness_score),
+			KEY speed_pending (speed_pending),
 			KEY zip_category (zip, category),
 			KEY search_id (search_id)
 		) $collate;";

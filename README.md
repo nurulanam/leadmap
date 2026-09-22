@@ -2,10 +2,25 @@
 
 Collect local business leads from Google Maps by industry and ZIP, straight into WP Admin.
 
-Covers **Search → Enrich → Leads → Export**. Triage, audit and outreach arrive in later
-phases; see `../DOCUMENTATION.md` for the full plan.
+Covers **Search → Enrich → Triage → Leads → Export**. The deep audit and outreach arrive in
+later phases; see `../DOCUMENTATION.md` for the full plan.
 
 ## What works now
+
+**Phase 3 — triage**
+
+- **Screenshot grid** — desktop and mobile side by side, 12 per page, sorted most-neglected
+  first by staleness score
+- **Keyboard-driven verdicts** — `1`–`4` for Outdated / Broken / Not mobile / Slow
+  (multi-select), `S` skip, `N` no website, `U` unsure, `Enter` to save and advance,
+  `Ctrl`+`Z` to undo
+- Verdicts save **optimistically** — the card clears and focus moves on immediately, the
+  request settles behind you, and a failure puts the card back rather than losing the lead
+- **Free screenshots by default** via WordPress.com mShots — no API key, nothing stored on
+  your server
+- **Optional auto-triage** for the unambiguous cases only; off by default, every automatic
+  verdict logged and reversible
+- Triage filter on the Leads screen, including an **Auto-triaged** view
 
 **Phase 2 — enrichment**
 
@@ -176,6 +191,40 @@ Three settings bound how long a lead can take, so one unresponsive site never st
 
 The watchdog retries a stalled lead once, then gives up and records why, so a site that accepts
 connections but never responds cannot consume jobs indefinitely.
+
+## Triage
+
+The deep audit takes minutes per lead. Running it on a business whose site is already modern
+is wasted effort — there is no problem to sell against. Triage is a cheap filter in front of an
+expensive one, and it is a **hard gate**: a lead that fails it leaves the pipeline and costs
+nothing further.
+
+Verdicts 1–4 are multi-select, because a site can be both outdated and broken, and they seed
+the deep audit's issue tags so it starts half-filled rather than blank.
+
+### Screenshots
+
+The best source is PageSpeed itself. Lighthouse renders each page in a real Chrome at the
+requested viewport and returns the result as a `final-screenshot` audit, so a speed check
+yields a **genuine mobile render and a genuine desktop render at no extra cost** — no third
+party, no API key, no separate request. Those are saved to `uploads/leadmap-shots/` and are
+preferred wherever a screenshot is shown.
+
+Until a speed check has run, a fallback provider fills the gap: WordPress.com's mShots by
+default (free, no key), or ScreenshotOne / ApiFlash if configured.
+
+This distinction matters on mobile. mShots renders at desktop width, so a "mobile" thumbnail
+from it is a crop, not a phone view — it shows none of what a mobile visitor sees while looking
+convincing. The plugin will not present one as the other: when a source cannot emulate a phone
+it says so, and offers a live 390px preview instead.
+
+Captures are deleted when a lead is deleted or skipped, so the pipeline does not accumulate
+images for leads it has discarded.
+
+Auto-triage skips a lead only when **every** signal says the site is healthy: PageSpeed 90+,
+mobile viewport, valid HTTPS, no mixed content, and a staleness score of zero. Anything
+ambiguous still comes to you — an automatic skip is the one mistake that silently loses a real
+lead.
 
 ## The map
 

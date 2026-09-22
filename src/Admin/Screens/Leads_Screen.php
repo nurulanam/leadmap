@@ -164,6 +164,14 @@ final class Leads_Screen {
 			$this->redirect( 'enriching', count( $ids ) );
 		}
 
+		if ( 'speed' === $action ) {
+			foreach ( $ids as $id ) {
+				Job_Runner::queue_speed( $id );
+			}
+
+			$this->redirect( 'speed', count( $ids ) );
+		}
+
 		if ( 'export' === $action ) {
 			$url = wp_nonce_url(
 				admin_url( 'admin-post.php?action=leadmap_export&ids=' . implode( ',', $ids ) ),
@@ -185,7 +193,27 @@ final class Leads_Screen {
 		$count = absint( $_GET['lm_count'] ?? 0 );
 		// phpcs:enable
 
-		if ( ! $count || ! in_array( $what, [ 'deleted', 'enriching' ], true ) ) {
+		if ( ! $count || ! in_array( $what, [ 'deleted', 'enriching', 'speed' ], true ) ) {
+			return;
+		}
+
+		if ( 'speed' === $what ) {
+			printf(
+				'<div class="notice notice-info is-dismissible"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %d: number of leads queued for a speed check. */
+						_n(
+							'PageSpeed queued for %d lead — mobile and desktop each. Scores appear as the queue clears.',
+							'PageSpeed queued for %d leads — mobile and desktop each. Scores appear as the queue clears.',
+							$count,
+							'leadmap'
+						),
+						$count
+					)
+				)
+			);
+
 			return;
 		}
 
