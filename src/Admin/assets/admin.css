@@ -1050,18 +1050,6 @@ kbd {
 
 .leadmap-shots__note { margin-top: 10px; }
 
-.leadmap-shots__live { margin-top: 12px; }
-
-.leadmap-shots__live iframe {
-	width: 390px;
-	max-width: 100%;
-	height: 620px;
-	border: 1px solid #dcdcde;
-	border-radius: 8px;
-	background: #fff;
-	display: block;
-}
-
 /* ---------- Speed panel ---------- */
 
 .leadmap-gauge__state {
@@ -1128,3 +1116,35 @@ kbd {
 @media ( prefers-reduced-motion: reduce ) {
 	.leadmap-worker::before { animation: none; }
 }
+
+/* A flag the automated checks pointed at — offered, never pre-selected. */
+.leadmap-verdict.is-suggested {
+	border-style: dashed;
+	border-color: #2271b1;
+	color: #2271b1;
+}
+
+.leadmap-verdict.is-suggested.is-on {
+	border-style: solid;
+	color: #fff;
+}
+
+/* Card with no capture yet */
+.leadmap-shot__pending {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	gap: 4px;
+	padding: 12px;
+	text-align: center;
+	color: #646970;
+	font-size: 12px;
+}
+
+.leadmap-shot__pending strong { color: #3c434a; }
+
+/* Seven flags need to wrap tidily on a narrow card. */
+.leadmap-card-triage__actions { gap: 4px 4px; }
+.leadmap-card-triage__actions .leadmap-verdict { flex: 0 1 auto; }

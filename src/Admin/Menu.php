@@ -173,10 +173,6 @@ final class Menu {
 				'speedStatusUrl' => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/speed/status' ),
 				'triageUrl'      => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/triage' ),
 				'i18n'           => [
-					'refresh'    => __( 'Refresh', 'leadmap' ),
-					'refreshing' => __( 'Regenerating…', 'leadmap' ),
-					'openLive'   => __( 'Open live at phone width', 'leadmap' ),
-					'closeLive'  => __( 'Close live preview', 'leadmap' ),
 					'measuring'  => __( 'Measuring…', 'leadmap' ),
 					'queued'     => __( 'Queued', 'leadmap' ),
 					'checkAgain' => __( 'Try again', 'leadmap' ),

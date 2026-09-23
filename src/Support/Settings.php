@@ -35,8 +35,6 @@ final class Settings {
 		'enrich_budget'       => 60,
 		'stuck_after_minutes' => 15,
 		'log_level'           => 'error',
-		'screenshot_provider' => 'mshots',
-		'screenshot_key'      => '',
 		'auto_triage'         => false,
 	];
 

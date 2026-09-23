@@ -11,13 +11,15 @@ later phases; see `../DOCUMENTATION.md` for the full plan.
 
 - **Screenshot grid** — desktop and mobile side by side, 12 per page, sorted most-neglected
   first by staleness score
-- **Keyboard-driven verdicts** — `1`–`4` for Outdated / Broken / Not mobile / Slow
-  (multi-select), `S` skip, `N` no website, `U` unsure, `Enter` to save and advance,
-  `Ctrl`+`Z` to undo
+- **Keyboard-driven verdicts** — `1`–`7` for Outdated / Broken / Not mobile / Slow / No SSL /
+  Poor SEO / Weak listing (multi-select), `S` skip, `N` no website, `U` unsure, `A` to accept
+  the suggested flags, `Enter` to save and advance, `Ctrl`+`Z` to undo
+- **Suggested flags** — the automated checks mark the flags they point at with a dotted
+  outline. They are offered, never pre-selected: pre-ticking would turn a judgement into a
+  rubber stamp, which is the one thing this stage exists to avoid
 - Verdicts save **optimistically** — the card clears and focus moves on immediately, the
   request settles behind you, and a failure puts the card back rather than losing the lead
-- **Free screenshots by default** via WordPress.com mShots — no API key, nothing stored on
-  your server
+- **Screenshots from PageSpeed** — Google's own render at each viewport, free, no extra call
 - **Optional auto-triage** for the unambiguous cases only; off by default, every automatic
   verdict logged and reversible
 - Triage filter on the Leads screen, including an **Auto-triaged** view
@@ -204,22 +206,19 @@ the deep audit's issue tags so it starts half-filled rather than blank.
 
 ### Screenshots
 
-The best source is PageSpeed itself. Lighthouse renders each page in a real Chrome at the
-requested viewport and returns the result as a `final-screenshot` audit, so a speed check
-yields a **genuine mobile render and a genuine desktop render at no extra cost** — no third
-party, no API key, no separate request. Those are saved to `uploads/leadmap-shots/` and are
-preferred wherever a screenshot is shown.
+There is one source: PageSpeed. Lighthouse renders each page in a real Chrome at the requested
+viewport and returns the result as a `final-screenshot` audit, so a speed check yields a
+**genuine mobile render and a genuine desktop render at no extra cost** — no third party, no
+API key, no separate request, nothing to configure.
 
-Until a speed check has run, a fallback provider fills the gap: WordPress.com's mShots by
-default (free, no key), or ScreenshotOne / ApiFlash if configured.
+Third-party providers were supported here and were removed. None produced a true mobile render
+for free: they render at desktop width and crop, which looks like a phone view while showing
+none of what a phone visitor sees. That is worse than no screenshot, because it is convincing.
 
-This distinction matters on mobile. mShots renders at desktop width, so a "mobile" thumbnail
-from it is a crop, not a phone view — it shows none of what a mobile visitor sees while looking
-convincing. The plugin will not present one as the other: when a source cannot emulate a phone
-it says so, and offers a live 390px preview instead.
+A lead has no screenshot until its speed check runs. The triage card says so plainly and links
+to the live site, rather than showing a misleading placeholder.
 
-Captures are deleted when a lead is deleted or skipped, so the pipeline does not accumulate
-images for leads it has discarded.
+Captures live in `uploads/leadmap-shots/` and are deleted when a lead is deleted or skipped.
 
 Auto-triage skips a lead only when **every** signal says the site is healthy: PageSpeed 90+,
 mobile viewport, valid HTTPS, no mixed content, and a staleness score of zero. Anything

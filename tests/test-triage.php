@@ -44,7 +44,7 @@ function check($l,$a,$e){global $fail; $ok=$a===$e; if(!$ok)$fail++;
   printf("%s %-50s got %-18s want %s\n",$ok?'PASS':'FAIL',$l,var_export($a,true),var_export($e,true));}
 
 echo "== the vocabulary ==\n";
-check('four pitchable flags', count(Verdicts::FLAGS), 4);
+check('seven pitchable flags', count(Verdicts::FLAGS), 7);
 check('three terminal',       count(Verdicts::TERMINAL), 3);
 check('outdated is a flag',   Verdicts::is_flag('outdated'), true);
 check('skip is terminal',     Verdicts::is_terminal('skip'), true);
@@ -57,6 +57,9 @@ foreach ([
   'broken'     => 'triaged',
   'not_mobile' => 'triaged',
   'slow'       => 'triaged',
+  'no_ssl'     => 'triaged',
+  'poor_seo'   => 'triaged',
+  'weak_gmb'   => 'triaged',
   'skip'       => 'skipped',
   'no_website' => 'no_website',
   'unsure'     => 'triage_deferred',
@@ -69,7 +72,7 @@ $keys = [];
 foreach (Verdicts::flags() as $f) { $keys[] = strtolower($f['key']); }
 foreach (Verdicts::terminal() as $t) { $keys[] = strtolower($t['key']); }
 check('no duplicate keys', count($keys) === count(array_unique($keys)), true);
-check('all single characters', count(array_filter($keys, fn($k) => strlen($k) === 1)), 7);
+check('all single characters', count(array_filter($keys, fn($k) => strlen($k) === 1)), 10);
 
 echo "\n== illegal combinations are refused, not silently coerced ==\n";
 // These run against a lead that does not exist, so they must fail on validation first —
@@ -123,21 +126,56 @@ check('mixed content',        $svc->auto_verdict($mk(
   ['http'=>['status'=>200],'speed_mobile'=>['score'=>95],
    'seo'=>['has_viewport'=>true,'is_https'=>true,'mixed_content'=>true]], 'https://a.com', 0)), '');
 
-echo "\n== screenshots ==\n";
-Settings::update(['screenshot_provider' => 'mshots']); Settings::flush();
+echo "\n== screenshots come only from PageSpeed now ==\n";
 $shots = new Screenshotter();
-$url = $shots->url('https://orchardplumbingandheating.info/', 'desktop');
-check('mshots needs no key',     str_starts_with($url, 'https://s0.wp.com/mshots/v1/'), true);
-check('target is encoded',       str_contains($url, 'https%3A%2F%2Forchardplumbing'), true);
-check('mobile is narrower',      str_contains($shots->url('https://example.com','mobile'), 'w=390'), true);
-check('desktop is wider',        str_contains($shots->url('https://example.com','desktop'), 'w=900'), true);
-check('no DNS needed to render', str_starts_with($shots->url('https://never-resolves-xyz-99821.com','desktop'), 'https://s0.wp.com/'), true);
-check('empty website',           $shots->url('', 'desktop'), '');
-check('private host refused',    $shots->url('http://127.0.0.1/', 'desktop'), '');
-check('metadata host refused',   $shots->url('http://169.254.169.254/', 'desktop'), '');
+$lead  = (object) ['website' => 'https://example.com/', 'review_count' => 40];
 
-Settings::update(['screenshot_provider' => 'none']); Settings::flush();
-check('disabled returns nothing', (new Screenshotter())->url('https://example.com'), '');
-check('reports disabled',         (new Screenshotter())->enabled(), false);
+$none = $shots->for_lead($lead, []);
+check('nothing captured yet',   $none['url'], '');
+check('reported as pending',    $none['pending'], true);
+check('not treated as real',    $none['real'], false);
+check('has_any is false',       $shots->has_any([]), false);
+
+$failed = $shots->for_lead($lead, ['speed_status' => ['desktop' => ['state' => 'failed']]]);
+check('a failed run is not pending', $failed['pending'], false);
+
+check('has_any sees a stored capture', $shots->has_any(['shot_desktop' => '7-desktop.jpg']), true);
+
+echo "\n== suggested flags follow the evidence ==\n";
+$suggest = fn(array $e, int $reviews = 40) =>
+    Verdicts::suggest((object) ['review_count' => $reviews], $e);
+
+check('dead site suggests broken',
+      in_array('broken', $suggest(['unreachable' => true]), true), true);
+check('404 suggests broken',
+      in_array('broken', $suggest(['http' => ['status' => 404]]), true), true);
+check('no HTTPS suggests no_ssl',
+      in_array('no_ssl', $suggest(['seo' => ['is_https' => false]]), true), true);
+check('no viewport suggests not_mobile',
+      in_array('not_mobile', $suggest(['seo' => ['has_viewport' => false]]), true), true);
+check('low PSI suggests slow',
+      in_array('slow', $suggest(['speed_mobile' => ['score' => 31]]), true), true);
+check('dated markers suggest outdated',
+      in_array('outdated', $suggest(['tech' => ['dated_markers' => ['flash']]]), true), true);
+check('big SEO gap suggests poor_seo',
+      in_array('poor_seo', $suggest(['seo' => ['gap_score' => 55]]), true), true);
+check('few reviews suggest weak_gmb',
+      in_array('weak_gmb', $suggest([], 3), true), true);
+check('plenty of reviews do not',
+      in_array('weak_gmb', $suggest([], 250), true), false);
+
+echo "\n== a healthy site suggests nothing ==\n";
+$healthy = ['http' => ['status' => 200], 'speed_mobile' => ['score' => 95],
+            'seo' => ['is_https' => true, 'has_viewport' => true, 'gap_score' => 4],
+            'tech' => ['dated_markers' => []]];
+check('no flags suggested', $suggest($healthy, 120), []);
+
+echo "\n== suggestions are only ever real flags ==\n";
+$all = $suggest(['unreachable' => true, 'seo' => ['is_https' => false, 'has_viewport' => false, 'gap_score' => 80],
+                 'speed_mobile' => ['score' => 5], 'tech' => ['dated_markers' => ['flash', 'font_tag']]], 1);
+check('every suggestion is a known flag',
+      array_diff($all, Verdicts::FLAGS), []);
+check('no duplicates', count($all), count(array_unique($all)));
+check('a bad site suggests several', count($all) >= 5, true);
 
 echo "\n".($fail?"FAILED: $fail\n":"ALL PASSED\n"); exit($fail?1:0);

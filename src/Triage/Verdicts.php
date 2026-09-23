@@ -17,7 +17,7 @@ defined( 'ABSPATH' ) || exit;
 final class Verdicts {
 
 	/** Flags that mean "worth pitching"; combinable. */
-	public const FLAGS = [ 'outdated', 'broken', 'not_mobile', 'slow' ];
+	public const FLAGS = [ 'outdated', 'broken', 'not_mobile', 'slow', 'no_ssl', 'poor_seo', 'weak_gmb' ];
 
 	/** Terminal verdicts; mutually exclusive and not combinable with flags. */
 	public const TERMINAL = [ 'skip', 'no_website', 'unsure' ];
@@ -45,7 +45,80 @@ final class Verdicts {
 				'key'   => '4',
 				'hint'  => __( 'Looks fine, but poor PageSpeed', 'leadmap' ),
 			],
+			'no_ssl'     => [
+				'label' => __( 'No SSL', 'leadmap' ),
+				'key'   => '5',
+				'hint'  => __( 'Browsers mark it "Not secure"', 'leadmap' ),
+			],
+			'poor_seo'   => [
+				'label' => __( 'Poor SEO', 'leadmap' ),
+				'key'   => '6',
+				'hint'  => __( 'Missing titles, descriptions, structure', 'leadmap' ),
+			],
+			'weak_gmb'   => [
+				'label' => __( 'Weak listing', 'leadmap' ),
+				'key'   => '7',
+				'hint'  => __( 'Few reviews or a thin Google profile', 'leadmap' ),
+			],
 		];
+	}
+
+	/**
+	 * Which flags the automated checks point at.
+	 *
+	 * Offered as hints, never pre-selected. Pre-ticking them would turn a judgement into a
+	 * rubber stamp, and the whole value of this stage is a human looking at the thing.
+	 *
+	 * @param array<string,mixed> $enrichment
+	 *
+	 * @return string[]
+	 */
+	public static function suggest( object $lead, array $enrichment ): array {
+		$seo   = (array) ( $enrichment['seo'] ?? [] );
+		$tech  = (array) ( $enrichment['tech'] ?? [] );
+		$cats  = (array) ( $enrichment['score_categories'] ?? [] );
+		$psi   = $enrichment['speed_mobile']['score'] ?? null;
+		$out   = [];
+
+		$status = (int) ( $enrichment['http']['status'] ?? 0 );
+
+		if ( ! empty( $enrichment['unreachable'] ) || $status >= 400 ) {
+			$out[] = 'broken';
+		}
+
+		if ( isset( $seo['is_https'] ) && ! $seo['is_https'] ) {
+			$out[] = 'no_ssl';
+			$out[] = 'broken';
+		}
+
+		if ( isset( $seo['has_viewport'] ) && ! $seo['has_viewport'] ) {
+			$out[] = 'not_mobile';
+		}
+
+		if ( null !== $psi && (int) $psi < 50 ) {
+			$out[] = 'slow';
+		}
+
+		if ( ! empty( $tech['dated_markers'] ) ) {
+			$out[] = 'outdated';
+		}
+
+		$age = (int) ( $cats['tech_age']['score'] ?? 0 );
+
+		if ( $age >= 40 ) {
+			$out[] = 'outdated';
+		}
+
+		if ( (int) ( $seo['gap_score'] ?? 0 ) >= 35 ) {
+			$out[] = 'poor_seo';
+		}
+
+		// A business with almost no reviews has a weak listing whatever its site looks like.
+		if ( (int) $lead->review_count < 10 ) {
+			$out[] = 'weak_gmb';
+		}
+
+		return array_values( array_unique( array_intersect( $out, self::FLAGS ) ) );
 	}
 
 	/** @return array<string,array{label:string,key:string,status:string,hint:string}> */

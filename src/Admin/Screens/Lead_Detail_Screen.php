@@ -70,7 +70,7 @@ final class Lead_Detail_Screen {
 				<div class="leadmap-detail__main">
 
 					<?php $this->render_screenshots( $lead, $enrichment ); ?>
-					<?php $this->render_triage( $lead ); ?>
+					<?php $this->render_triage( $lead, $enrichment ); ?>
 
 					<div class="leadmap-card">
 						<h2><?php esc_html_e( 'Contact', 'leadmap' ); ?></h2>
@@ -487,23 +487,30 @@ final class Lead_Detail_Screen {
 		$mobile_src  = $shots->for_lead( $lead, $enrichment, 'mobile' );
 
 		$desktop = $desktop_src['url'];
-		$mobile  = $mobile_src['real'] ? $mobile_src['url'] : '';
+		$mobile  = $mobile_src['url'];
 
 		?>
 		<div class="leadmap-card leadmap-shots" data-leadmap-shots
-			data-website="<?php echo esc_attr( $website ); ?>"
 			data-lead-id="<?php echo esc_attr( (string) (int) $lead->id ); ?>">
 
 			<h2>
 				<?php esc_html_e( 'The website', 'leadmap' ); ?>
-				<button type="button" class="button button-small" data-leadmap-reshoot>
-					<?php esc_html_e( 'Refresh', 'leadmap' ); ?>
-				</button>
+				<?php if ( '' !== $desktop || '' !== $mobile ) : ?>
+					<button type="button" class="button button-small" data-leadmap-reshoot>
+						<?php esc_html_e( 'Reload images', 'leadmap' ); ?>
+					</button>
+				<?php endif; ?>
 			</h2>
 
-			<?php if ( '' === $desktop ) : ?>
+			<?php if ( '' === $desktop && '' === $mobile ) : ?>
 				<p class="leadmap-muted">
-					<?php esc_html_e( 'Screenshots are turned off. Enable a provider under Settings, or open the site directly.', 'leadmap' ); ?>
+					<?php
+					echo esc_html(
+						$desktop_src['pending']
+							? __( 'Google captures a screenshot of each viewport during the PageSpeed check. One is on the way.', 'leadmap' )
+							: __( 'No screenshot yet. Run a PageSpeed check above and Google will capture both viewports.', 'leadmap' )
+					);
+					?>
 				</p>
 			<?php else : ?>
 				<div class="leadmap-shots__pair">
@@ -519,46 +526,30 @@ final class Lead_Detail_Screen {
 								alt="<?php echo esc_attr( sprintf( /* translators: %s: business name. */ __( 'Mobile view of %s', 'leadmap' ), (string) $lead->name ) ); ?>" />
 						<?php else : ?>
 							<div class="leadmap-shots__nomobile">
-								<p><?php esc_html_e( 'This provider cannot render at a phone viewport.', 'leadmap' ); ?></p>
+								<p><?php esc_html_e( 'The mobile capture has not arrived yet.', 'leadmap' ); ?></p>
 							</div>
 						<?php endif; ?>
-						<figcaption>
-							<?php esc_html_e( 'Mobile', 'leadmap' ); ?>
-							<button type="button" class="button-link" data-leadmap-live-mobile>
-								<?php esc_html_e( 'Open live at phone width', 'leadmap' ); ?>
-							</button>
-						</figcaption>
+						<figcaption><?php esc_html_e( 'Mobile', 'leadmap' ); ?></figcaption>
 					</figure>
 				</div>
 
 				<p class="leadmap-muted leadmap-shots__note">
-					<?php if ( 'pagespeed' === $mobile_src['source'] || 'pagespeed' === $desktop_src['source'] ) : ?>
-						<?php esc_html_e( 'Captured by Google during the PageSpeed run — a real render at each viewport, not a resized desktop shot. Re-check speed to capture it again.', 'leadmap' ); ?>
-					<?php else : ?>
-						<?php esc_html_e( 'Generated on demand and cached by the provider. Run a PageSpeed check to replace these with Google\'s own render, which is more accurate on mobile.', 'leadmap' ); ?>
-					<?php endif; ?>
+					<?php esc_html_e( 'Captured by Google during the PageSpeed run — a real render at each viewport, not a resized desktop shot. Re-check speed to capture them again.', 'leadmap' ); ?>
 				</p>
-
-				<div class="leadmap-shots__live" hidden>
-					<iframe title="<?php esc_attr_e( 'Live mobile preview', 'leadmap' ); ?>"
-						sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" loading="lazy"></iframe>
-					<p class="leadmap-muted">
-						<?php esc_html_e( 'Rendered live in your browser at 390px wide — this is genuinely what a phone gets. Some sites refuse to be framed and will show blank.', 'leadmap' ); ?>
-					</p>
-				</div>
 			<?php endif; ?>
 		</div>
 		<?php
 	}
 
 	/** Triage from the lead page, so the grid is a shortcut rather than the only route. */
-	private function render_triage( object $lead ): void {
+	private function render_triage( object $lead, array $enrichment ): void {
 		if ( ! current_user_can( 'leadmap_audit' ) ) {
 			return;
 		}
 
-		$verdict = (string) $lead->triage_verdict;
-		$flags   = array_filter( explode( ',', (string) $lead->triage_flags ) );
+		$verdict   = (string) $lead->triage_verdict;
+		$flags     = array_filter( explode( ',', (string) $lead->triage_flags ) );
+		$suggested = Verdicts::suggest( $lead, $enrichment );
 
 		?>
 		<div class="leadmap-card leadmap-triage-panel" data-leadmap-triage data-lead-id="<?php echo esc_attr( (string) (int) $lead->id ); ?>">
@@ -577,9 +568,14 @@ final class Lead_Detail_Screen {
 
 			<div class="leadmap-card-triage__actions">
 				<?php foreach ( Verdicts::flags() as $id => $flag ) : ?>
-					<button type="button" class="leadmap-verdict<?php echo in_array( $id, $flags, true ) ? ' is-on' : ''; ?>"
-						data-verdict="<?php echo esc_attr( $id ); ?>" title="<?php echo esc_attr( $flag['hint'] ); ?>"
-						aria-pressed="<?php echo in_array( $id, $flags, true ) ? 'true' : 'false'; ?>">
+					<?php
+					$on          = in_array( $id, $flags, true );
+					$is_suggested = ! $on && in_array( $id, $suggested, true );
+					?>
+					<button type="button" class="leadmap-verdict<?php echo $on ? ' is-on' : ''; ?><?php echo $is_suggested ? ' is-suggested' : ''; ?>"
+						data-verdict="<?php echo esc_attr( $id ); ?>"
+						title="<?php echo esc_attr( $is_suggested ? $flag['hint'] . ' — ' . __( 'the automated checks point at this', 'leadmap' ) : $flag['hint'] ); ?>"
+						aria-pressed="<?php echo $on ? 'true' : 'false'; ?>">
 						<?php echo esc_html( $flag['label'] ); ?>
 					</button>
 				<?php endforeach; ?>

@@ -243,7 +243,15 @@
 	}
 
 	// ---- Keyboard ----------------------------------------------------------------------
-	var flagKeys = { '1': 'outdated', '2': 'broken', '3': 'not_mobile', '4': 'slow' };
+	var flagKeys = {
+		'1': 'outdated',
+		'2': 'broken',
+		'3': 'not_mobile',
+		'4': 'slow',
+		'5': 'no_ssl',
+		'6': 'poor_seo',
+		'7': 'weak_gmb'
+	};
 	var termKeys = { s: 'skip', n: 'no_website', u: 'unsure' };
 
 	document.addEventListener( 'keydown', function ( event ) {
@@ -280,6 +288,21 @@
 		if ( termKeys[ lower ] ) {
 			event.preventDefault();
 			decide( card, [ termKeys[ lower ] ] );
+			return;
+		}
+
+		// Accept everything the automated checks pointed at, then the operator adjusts.
+		if ( lower === 'a' ) {
+			event.preventDefault();
+
+			Array.prototype.forEach.call(
+				card.querySelectorAll( '[data-suggested="1"]' ),
+				function ( el ) {
+					el.classList.add( 'is-on' );
+					el.setAttribute( 'aria-pressed', 'true' );
+				}
+			);
+
 			return;
 		}
 

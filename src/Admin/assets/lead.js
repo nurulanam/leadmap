@@ -31,58 +31,29 @@
 	}
 
 	// ---- Screenshots -------------------------------------------------------------------
-	var shots = document.querySelector( '[data-leadmap-shots]' );
+	// These are files on our own disk, captured by Google during the PageSpeed run. The
+	// button re-fetches them, which matters after a re-check has overwritten them: the URL
+	// is unchanged, so without a fresh parameter the browser keeps the old image.
+	var shots   = document.querySelector( '[data-leadmap-shots]' );
+	var reshoot = shots ? shots.querySelector( '[data-leadmap-reshoot]' ) : null;
 
-	if ( shots ) {
+	if ( reshoot ) {
 		var bust = 0;
 
-		shots.querySelector( '[data-leadmap-reshoot]' ).addEventListener( 'click', function ( event ) {
-			var button = event.currentTarget;
-
+		reshoot.addEventListener( 'click', function () {
 			bust++;
-			button.disabled = true;
-			button.textContent = cfg.i18n.refreshing;
 
 			Array.prototype.forEach.call( shots.querySelectorAll( '[data-leadmap-shot]' ), function ( img ) {
 				var base = img.src.split( /[?&]r=/ )[ 0 ];
-				var join = base.indexOf( '?' ) === -1 ? '?' : '&';
 
 				img.classList.add( 'is-loading' );
-				img.src = base + join + 'r=' + bust;
+				img.src = base + ( base.indexOf( '?' ) === -1 ? '?' : '&' ) + 'r=' + bust;
 
 				img.addEventListener( 'load', function () {
 					img.classList.remove( 'is-loading' );
 				}, { once: true } );
 			} );
-
-			// The provider regenerates on request, so give it a moment before re-enabling.
-			window.setTimeout( function () {
-				button.disabled = false;
-				button.textContent = cfg.i18n.refresh;
-			}, 4000 );
 		} );
-
-		// A real render at phone width, in the browser, so responsive CSS genuinely applies.
-		var liveButton = shots.querySelector( '[data-leadmap-live-mobile]' );
-		var livePanel  = shots.querySelector( '.leadmap-shots__live' );
-
-		if ( liveButton && livePanel ) {
-			liveButton.addEventListener( 'click', function () {
-				var frame = livePanel.querySelector( 'iframe' );
-				var open  = ! livePanel.hidden;
-
-				if ( open ) {
-					livePanel.hidden = true;
-					frame.src = 'about:blank';
-					liveButton.textContent = cfg.i18n.openLive;
-					return;
-				}
-
-				frame.src = shots.getAttribute( 'data-website' );
-				livePanel.hidden = false;
-				liveButton.textContent = cfg.i18n.closeLive;
-			} );
-		}
 	}
 
 	// ---- Speed -------------------------------------------------------------------------

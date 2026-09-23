@@ -48,6 +48,7 @@ final class Triage_Screen {
 
 			<p class="description leadmap-triage__intro">
 				<?php esc_html_e( 'Is this site old or broken enough to be worth pitching? Three seconds each. The deep audit only ever sees what you pass through here.', 'leadmap' ); ?>
+				<?php esc_html_e( 'Dotted outlines are what the automated checks found — confirm or overrule them.', 'leadmap' ); ?>
 			</p>
 
 			<div class="leadmap-triage__bar">
@@ -85,6 +86,7 @@ final class Triage_Screen {
 					<?php foreach ( Verdicts::terminal() as $id => $verdict ) : ?>
 						<li><kbd><?php echo esc_html( $verdict['key'] ); ?></kbd> <?php echo esc_html( $verdict['label'] ); ?></li>
 					<?php endforeach; ?>
+					<li><kbd>A</kbd> <?php esc_html_e( 'Accept the suggested flags', 'leadmap' ); ?></li>
 					<li><kbd>Enter</kbd> <?php esc_html_e( 'Save and move on', 'leadmap' ); ?></li>
 					<li><kbd>&larr;</kbd> <kbd>&rarr;</kbd> <?php esc_html_e( 'Move between cards', 'leadmap' ); ?></li>
 					<li><kbd>Ctrl</kbd>+<kbd>Z</kbd> <?php esc_html_e( 'Undo the last verdict', 'leadmap' ); ?></li>
@@ -188,9 +190,29 @@ final class Triage_Screen {
 							loading="lazy" data-leadmap-shot />
 					<?php endif; ?>
 				<?php else : ?>
-					<iframe class="leadmap-shot__frame" src="<?php echo esc_url( $website ); ?>"
-						sandbox="allow-scripts allow-same-origin" loading="lazy" referrerpolicy="no-referrer"
-						title="<?php echo esc_attr( (string) $lead->name ); ?>"></iframe>
+					<div class="leadmap-shot__pending">
+						<strong>
+							<?php
+							echo esc_html(
+								$desktop_src['pending']
+									? __( 'Screenshot on the way', 'leadmap' )
+									: __( 'No screenshot', 'leadmap' )
+							);
+							?>
+						</strong>
+						<span>
+							<?php
+							echo esc_html(
+								$desktop_src['pending']
+									? __( 'Captured during the PageSpeed check', 'leadmap' )
+									: __( 'Run a speed check to capture one', 'leadmap' )
+							);
+							?>
+						</span>
+						<a href="<?php echo esc_url( $website ); ?>" target="_blank" rel="noopener noreferrer nofollow">
+							<?php esc_html_e( 'Open the site', 'leadmap' ); ?>
+						</a>
+					</div>
 				<?php endif; ?>
 
 				<?php if ( null !== $score ) : ?>
@@ -255,8 +277,12 @@ final class Triage_Screen {
 
 			<div class="leadmap-card-triage__actions">
 				<?php foreach ( Verdicts::flags() as $id => $flag ) : ?>
-					<button type="button" class="leadmap-verdict" data-verdict="<?php echo esc_attr( $id ); ?>"
-						title="<?php echo esc_attr( $flag['hint'] ); ?>" aria-pressed="false">
+					<?php $is_suggested = in_array( $id, $suggested, true ); ?>
+					<button type="button" class="leadmap-verdict<?php echo $is_suggested ? ' is-suggested' : ''; ?>"
+						data-verdict="<?php echo esc_attr( $id ); ?>"
+						<?php echo $is_suggested ? 'data-suggested="1"' : ''; ?>
+						title="<?php echo esc_attr( $is_suggested ? $flag['hint'] . ' — ' . __( 'the automated checks point at this', 'leadmap' ) : $flag['hint'] ); ?>"
+						aria-pressed="false">
 						<kbd><?php echo esc_html( $flag['key'] ); ?></kbd><?php echo esc_html( $flag['label'] ); ?>
 					</button>
 				<?php endforeach; ?>

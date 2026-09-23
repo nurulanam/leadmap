@@ -13,7 +13,6 @@ use LeadMap\Enrich\Speed_Analyzer;
 use LeadMap\Providers\Google_Places_Provider;
 use LeadMap\Search\Search_Query;
 use LeadMap\Triage\Screenshot_Store;
-use LeadMap\Triage\Screenshotter;
 use LeadMap\Support\Encryption;
 use LeadMap\Support\Http;
 use LeadMap\Support\Settings;
@@ -195,44 +194,21 @@ final class Settings_Screen {
 
 				<table class="form-table" role="presentation">
 					<tr>
-						<th scope="row"><label for="lm-shots"><?php esc_html_e( 'Screenshots', 'leadmap' ); ?></label></th>
-						<td>
-							<select name="screenshot_provider" id="lm-shots">
-								<?php foreach ( Screenshotter::providers() as $id => $label ) : ?>
-									<option value="<?php echo esc_attr( $id ); ?>" <?php selected( Settings::get( 'screenshot_provider', 'mshots' ), $id ); ?>>
-										<?php echo esc_html( $label ); ?>
-									</option>
-								<?php endforeach; ?>
-							</select>
-							<p class="description">
-								<?php esc_html_e( 'mShots is the service the WordPress.org plugin directory uses for its own previews: free, no account, and nothing is stored on your server. The paid options are sharper and more reliable on awkward sites.', 'leadmap' ); ?>
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><?php esc_html_e( 'Stored captures', 'leadmap' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'Screenshots', 'leadmap' ); ?></th>
 						<td>
 							<?php $usage = Screenshot_Store::disk_usage(); ?>
 							<p>
 								<?php
 								printf(
 									/* translators: %s: disk space used, already formatted. */
-									esc_html__( '%s on disk.', 'leadmap' ),
+									esc_html__( 'Captured during PageSpeed runs. %s on disk.', 'leadmap' ),
 									esc_html( size_format( $usage, 1 ) ?: '0 B' )
 								);
 								?>
 							</p>
 							<p class="description">
-								<?php esc_html_e( 'PageSpeed returns the page as Google rendered it, so a screenshot is saved during each speed check — a genuine mobile render, at no extra cost. They live in uploads/leadmap-shots/ and are removed when a lead is deleted or skipped.', 'leadmap' ); ?>
+								<?php esc_html_e( 'Google renders each page in a real browser at both viewports and returns the result, so a speed check produces a genuine desktop and mobile screenshot at no extra cost. There is nothing to configure and no third-party service involved. Captures live in uploads/leadmap-shots/ and are removed when a lead is deleted or skipped.', 'leadmap' ); ?>
 							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="lm-shot-key"><?php esc_html_e( 'Screenshot API key', 'leadmap' ); ?></label></th>
-						<td>
-							<input type="password" name="screenshot_key" id="lm-shot-key" class="regular-text" autocomplete="off"
-								placeholder="<?php echo esc_attr( Settings::get( 'screenshot_key', '' ) ? Encryption::mask( (string) Encryption::decrypt( (string) Settings::get( 'screenshot_key', '' ) ) ) : __( 'Only needed for the paid providers', 'leadmap' ) ); ?>" />
-							<p class="description"><?php esc_html_e( 'Leave blank to keep the current key. Not needed for mShots.', 'leadmap' ); ?></p>
 						</td>
 					</tr>
 					<tr>
@@ -308,9 +284,6 @@ final class Settings_Screen {
 			'max_cost_per_search' => max( 0, (float) ( $_POST['max_cost_per_search'] ?? 0 ) ),
 			'auto_enrich'         => ! empty( $_POST['auto_enrich'] ),
 			'auto_triage'         => ! empty( $_POST['auto_triage'] ),
-			'screenshot_provider' => array_key_exists( sanitize_key( wp_unslash( $_POST['screenshot_provider'] ?? '' ) ), Screenshotter::providers() )
-				? sanitize_key( wp_unslash( $_POST['screenshot_provider'] ) )
-				: 'mshots',
 			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
 			'pagespeed_per_minute' => max( 1, min( 60, absint( $_POST['pagespeed_per_minute'] ?? 4 ) ) ),
 			'pagespeed_timeout'   => max( 30, min( 180, absint( $_POST['pagespeed_timeout'] ?? 90 ) ) ),
@@ -324,12 +297,6 @@ final class Settings_Screen {
 
 		if ( '' !== $submitted_key && ! Settings::key_is_from_constant() ) {
 			$values['google_api_key'] = Encryption::encrypt( sanitize_text_field( $submitted_key ) );
-		}
-
-		$shot_key = trim( (string) wp_unslash( $_POST['screenshot_key'] ?? '' ) );
-
-		if ( '' !== $shot_key ) {
-			$values['screenshot_key'] = Encryption::encrypt( sanitize_text_field( $shot_key ) );
 		}
 
 		Settings::update( $values );
