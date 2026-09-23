@@ -36,6 +36,9 @@ final class Settings {
 		'stuck_after_minutes' => 15,
 		'log_level'           => 'error',
 		'auto_triage'         => false,
+		'gemini_api_key'      => '',
+		'gemini_model'        => 'gemini-2.0-flash',
+		'gemini_per_minute'   => 10,
 	];
 
 	/** @return array<string,mixed> */

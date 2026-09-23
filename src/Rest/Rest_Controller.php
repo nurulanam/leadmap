@@ -13,16 +13,21 @@ declare( strict_types=1 );
 
 namespace LeadMap\Rest;
 
+use LeadMap\Ai\Problem_Writer;
+use LeadMap\Audit\Audit_Service;
+use LeadMap\Audit\Issue_Tags;
 use LeadMap\Enrich\Enrichment_Service;
 use LeadMap\Enrich\Speed_Analyzer;
 use LeadMap\Enrich\Speed_Status;
 use LeadMap\Jobs\Job_Runner;
 use LeadMap\Jobs\Lock;
+use LeadMap\Support\Rate_Limiter;
 use LeadMap\Jobs\Scheduler;
 use LeadMap\Leads\Lead_Repository;
 use LeadMap\Providers\Google_Places_Provider;
 use LeadMap\Search\Search_Repository;
 use LeadMap\Search\Search_Runner;
+use LeadMap\Support\Logger;
 use LeadMap\Support\Settings;
 use LeadMap\Triage\Triage_Service;
 use LeadMap\Triage\Verdicts;
@@ -92,6 +97,32 @@ final class Rest_Controller {
 			[
 				'methods'             => 'GET',
 				'callback'            => [ $this, 'speed_status' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+				'args'                => [
+					'id' => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/leads/(?P<id>\d+)/draft',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'draft_problem' ],
+				'permission_callback' => [ $this, 'can_audit' ],
+				'args'                => [
+					'id' => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/leads/(?P<id>\d+)/audit',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'save_audit' ],
 				'permission_callback' => [ $this, 'can_audit' ],
 				'args'                => [
 					'id' => [ 'type' => 'integer', 'required' => true, 'sanitize_callback' => 'absint' ],
@@ -319,6 +350,62 @@ final class Rest_Controller {
 		return new WP_REST_Response( $out );
 	}
 
+	/**
+	 * Draft the problem note from the evidence.
+	 *
+	 * Returns text for the operator to edit. Nothing is saved here — the draft is a starting
+	 * point, and the note only exists once a person has approved it.
+	 */
+	public function draft_problem( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$id   = absint( $request->get_param( 'id' ) );
+		$lead = Lead_Repository::find( $id );
+
+		if ( ! $lead ) {
+			return new WP_Error( 'leadmap_not_found', __( 'Lead not found.', 'leadmap' ), [ 'status' => 404 ] );
+		}
+
+		$enrichment = json_decode( (string) $lead->enrichment_json, true );
+		$enrichment = is_array( $enrichment ) ? $enrichment : [];
+
+		$tags = array_values( array_filter(
+			array_map( 'sanitize_key', (array) $request->get_param( 'issue_tags' ) ),
+			[ Issue_Tags::class, 'exists' ]
+		) );
+
+		$primary = sanitize_key( (string) $request->get_param( 'primary_issue' ) );
+
+		$text = ( new Problem_Writer() )->draft( $lead, $enrichment, $tags, $primary );
+
+		if ( is_wp_error( $text ) ) {
+			return new WP_Error( $text->get_error_code(), $text->get_error_message(), [ 'status' => 422 ] );
+		}
+
+		return new WP_REST_Response( [ 'lead_id' => $id, 'text' => $text ] );
+	}
+
+	/** Record an audit. */
+	public function save_audit( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+		$id = absint( $request->get_param( 'id' ) );
+
+		$result = ( new Audit_Service() )->save(
+			$id,
+			[
+				'outcome'       => (string) $request->get_param( 'outcome' ),
+				'issue_tags'    => (array) $request->get_param( 'issue_tags' ),
+				'primary_issue' => (string) $request->get_param( 'primary_issue' ),
+				'problem_notes' => (string) $request->get_param( 'problem_notes' ),
+				'is_reachable'  => (bool) $request->get_param( 'is_reachable' ),
+				'fit_override'  => $request->get_param( 'fit_override' ),
+			]
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return new WP_Error( $result->get_error_code(), $result->get_error_message(), [ 'status' => 400 ] );
+		}
+
+		return new WP_REST_Response( $result );
+	}
+
 	/** Record a triage verdict. */
 	public function triage( WP_REST_Request $request ): WP_REST_Response|WP_Error {
 		$id    = absint( $request->get_param( 'id' ) );
@@ -494,7 +581,32 @@ final class Rest_Controller {
 
 		// While someone is watching, this request will drive the search itself rather than
 		// waiting on WP-Cron. See nudge() for why that is necessary.
-		if ( $this->nudge( $search ) ) {
+		//
+		// Wrapped, because this response is the only thing telling the operator what is
+		// happening: if running a page throws, they must still be told that, rather than
+		// watching a spinner while the endpoint 500s behind it.
+		try {
+			if ( $this->nudge( $search ) ) {
+				$search = Search_Repository::find( $id ) ?? $search;
+			}
+		} catch ( \Throwable $e ) {
+			Logger::error(
+				'Driving the search from the progress endpoint failed.',
+				[ 'search' => $id, 'error' => $e->getMessage() ]
+			);
+
+			Search_Repository::log(
+				$id,
+				sprintf(
+					/* translators: %s: the error message. */
+					__( 'Could not fetch the next page: %s', 'leadmap' ),
+					$e->getMessage()
+				),
+				'error'
+			);
+
+			Search_Repository::mark_failed( $id, $e->getMessage() );
+
 			$search = Search_Repository::find( $id ) ?? $search;
 		}
 

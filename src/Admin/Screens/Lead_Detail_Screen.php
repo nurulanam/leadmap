@@ -62,6 +62,11 @@ final class Lead_Detail_Screen {
 			<a href="<?php echo esc_url( $this->action_url( 'enrich', $lead_id ) ); ?>" class="page-title-action">
 				<?php esc_html_e( 'Re-enrich', 'leadmap' ); ?>
 			</a>
+			<?php if ( current_user_can( 'leadmap_audit' ) && in_array( (string) $lead->status, [ 'triaged', 'audited' ], true ) ) : ?>
+				<a href="<?php echo esc_url( admin_url( 'admin.php?page=leadmap-audit&lead=' . $lead_id ) ); ?>" class="page-title-action">
+					<?php echo esc_html( 'audited' === $lead->status ? __( 'Edit audit', 'leadmap' ) : __( 'Audit this lead', 'leadmap' ) ); ?>
+				</a>
+			<?php endif; ?>
 			<hr class="wp-header-end" />
 
 			<?php $this->render_notice(); ?>

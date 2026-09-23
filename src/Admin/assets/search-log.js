@@ -78,7 +78,11 @@
 		}
 
 		if ( heading ) {
-			if ( data.running ) {
+			if ( data.running && data.stalled ) {
+				// Running, but nothing has happened for a while — say so rather than
+				// spinning indefinitely with no explanation.
+				heading.textContent = cfg.i18n.stalled;
+			} else if ( data.running ) {
 				heading.textContent = cfg.i18n.running;
 			} else if ( data.status === 'failed' ) {
 				heading.textContent = cfg.i18n.failed;

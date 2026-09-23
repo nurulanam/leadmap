@@ -147,9 +147,11 @@ final class Lead_Repository {
 		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 		$leads        = Schema::table( 'leads' );
 		$emails       = Schema::table( 'lead_emails' );
+		$audits       = Schema::table( 'audits' );
 
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( $wpdb->prepare( "DELETE FROM {$emails} WHERE lead_id IN ({$placeholders})", ...$ids ) );
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$audits} WHERE lead_id IN ({$placeholders})", ...$ids ) );
 		$deleted = $wpdb->query( $wpdb->prepare( "DELETE FROM {$leads} WHERE id IN ({$placeholders})", ...$ids ) );
 		// phpcs:enable
 

@@ -1148,3 +1148,134 @@ kbd {
 /* Seven flags need to wrap tidily on a narrow card. */
 .leadmap-card-triage__actions { gap: 4px 4px; }
 .leadmap-card-triage__actions .leadmap-verdict { flex: 0 1 auto; }
+
+/* ---------- Audit ---------- */
+
+.leadmap-audit__grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(360px, 480px);
+	gap: 16px;
+	align-items: start;
+	margin-top: 8px;
+}
+
+@media screen and (max-width: 1200px) {
+	.leadmap-audit__grid { grid-template-columns: 1fr; }
+}
+
+.leadmap-audit__evidence .leadmap-card h2 {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+}
+
+.leadmap-audit__open { margin-left: auto; font-size: 12px; font-weight: 400; }
+
+.leadmap-audit__shots {
+	display: grid;
+	grid-template-columns: 1fr 160px;
+	gap: 12px;
+	align-items: start;
+	margin-top: 10px;
+}
+
+.leadmap-audit__shots img {
+	width: 100%;
+	display: block;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+}
+
+@media screen and (max-width: 782px) {
+	.leadmap-audit__shots { grid-template-columns: 1fr; }
+	.leadmap-audit__shot-mobile { max-width: 200px; }
+}
+
+.leadmap-audit__title { margin-top: 10px; }
+
+/* The form column sticks, so the note stays in view while reading the evidence. */
+.leadmap-audit__form { position: sticky; top: 46px; }
+
+.leadmap-audit__tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	border: 0;
+	padding: 0;
+	margin: 0 0 14px;
+}
+
+.leadmap-audit__tags label {
+	cursor: pointer;
+	user-select: none;
+}
+
+.leadmap-audit__tags input[type="checkbox"] {
+	position: absolute;
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+.leadmap-audit__tags label:focus-within {
+	outline: 2px solid #2271b1;
+	outline-offset: 1px;
+}
+
+.leadmap-audit__field { margin: 0 0 14px; }
+
+.leadmap-audit__field label { display: block; margin-bottom: 4px; }
+
+.leadmap-audit__field textarea,
+.leadmap-audit__field select {
+	width: 100%;
+	max-width: 100%;
+}
+
+.leadmap-audit__field .description {
+	display: block;
+	margin-top: 4px;
+	font-size: 12px;
+	color: #646970;
+}
+
+.leadmap-audit__field--inline label { display: inline-block; margin-right: 8px; }
+.leadmap-audit__field--inline .description { display: inline-block; margin-left: 8px; }
+
+.leadmap-audit__status {
+	margin: 0 0 10px;
+	min-height: 18px;
+	font-size: 13px;
+	color: #646970;
+}
+
+.leadmap-audit__status.is-ok    { color: #135e1e; }
+.leadmap-audit__status.is-error { color: #8a1f11; font-weight: 600; }
+
+.leadmap-audit__actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	border-top: 1px solid #f0f0f1;
+	padding-top: 12px;
+}
+
+.leadmap-audit__actions kbd { margin-left: 4px; }
+.leadmap-audit__detail { margin-left: auto; font-size: 12px; }
+
+.leadmap-audit__draft {
+	margin-left: 8px;
+	vertical-align: middle;
+}
+
+.leadmap-audit__draft .dashicons {
+	font-size: 15px;
+	width: 15px;
+	height: 15px;
+	vertical-align: text-bottom;
+	margin-right: 2px;
+}
+
+.leadmap-audit__draft[disabled] { opacity: .6; }

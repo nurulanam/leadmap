@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace LeadMap\Admin\Screens;
 
+use LeadMap\Ai\Gemini_Client;
 use LeadMap\Enrich\Speed_Analyzer;
 use LeadMap\Providers\Google_Places_Provider;
 use LeadMap\Search\Search_Query;
@@ -225,6 +226,50 @@ final class Settings_Screen {
 					</tr>
 				</table>
 
+				<h2><?php esc_html_e( 'Gemini (optional)', 'leadmap' ); ?></h2>
+
+				<p class="description" style="max-width: 640px;">
+					<?php esc_html_e( 'Drafts the problem note on the audit screen from the measurements already collected. Entirely optional — the note can always be written by hand, and a draft is never saved until you save it.', 'leadmap' ); ?>
+				</p>
+
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="lm-gemini-key"><?php esc_html_e( 'Gemini API key', 'leadmap' ); ?></label></th>
+						<td>
+							<?php if ( Gemini_Client::key_is_from_constant() ) : ?>
+								<p>
+									<code><?php echo esc_html( Encryption::mask( Gemini_Client::api_key() ) ); ?></code><br />
+									<span class="description"><?php esc_html_e( 'Set via the LEADMAP_GEMINI_API_KEY constant in wp-config.php.', 'leadmap' ); ?></span>
+								</p>
+							<?php else : ?>
+								<input type="password" name="gemini_api_key" id="lm-gemini-key" class="regular-text" autocomplete="off"
+									placeholder="<?php echo esc_attr( Gemini_Client::api_key() ? Encryption::mask( Gemini_Client::api_key() ) : __( 'Paste your key', 'leadmap' ) ); ?>" />
+								<p class="description">
+									<?php esc_html_e( 'This is a different key from the Maps one. Create a free one at aistudio.google.com/apikey. Stored encrypted; leave blank to keep the current key.', 'leadmap' ); ?>
+								</p>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="lm-gemini-model"><?php esc_html_e( 'Model', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="text" name="gemini_model" id="lm-gemini-model" class="regular-text"
+								value="<?php echo esc_attr( (string) Settings::get( 'gemini_model', 'gemini-2.0-flash' ) ); ?>" />
+							<p class="description">
+								<?php esc_html_e( 'A free-tier model such as gemini-2.0-flash. Model names change; Test connection lists the ones your key can use.', 'leadmap' ); ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="lm-gemini-rate"><?php esc_html_e( 'Requests per minute', 'leadmap' ); ?></label></th>
+						<td>
+							<input type="number" name="gemini_per_minute" id="lm-gemini-rate" class="small-text" min="1" max="60" step="1"
+								value="<?php echo esc_attr( (string) Settings::get( 'gemini_per_minute', 10 ) ); ?>" />
+							<p class="description"><?php esc_html_e( 'The free tier allows only a handful a minute. Drafts are spaced to stay inside it.', 'leadmap' ); ?></p>
+						</td>
+					</tr>
+				</table>
+
 				<h2><?php esc_html_e( 'Timeouts', 'leadmap' ); ?></h2>
 
 				<table class="form-table" role="presentation">
@@ -287,6 +332,8 @@ final class Settings_Screen {
 			'auto_pagespeed'      => ! empty( $_POST['auto_pagespeed'] ),
 			'pagespeed_per_minute' => max( 1, min( 60, absint( $_POST['pagespeed_per_minute'] ?? 4 ) ) ),
 			'pagespeed_timeout'   => max( 30, min( 180, absint( $_POST['pagespeed_timeout'] ?? 90 ) ) ),
+			'gemini_model'        => sanitize_text_field( wp_unslash( $_POST['gemini_model'] ?? 'gemini-2.0-flash' ) ),
+			'gemini_per_minute'   => max( 1, min( 60, absint( $_POST['gemini_per_minute'] ?? 10 ) ) ),
 			'crawl_timeout'       => max( 3, min( 60, absint( $_POST['crawl_timeout'] ?? 10 ) ) ),
 			'enrich_budget'       => max( 10, min( 300, absint( $_POST['enrich_budget'] ?? 60 ) ) ),
 			'stuck_after_minutes' => max( 5, min( 1440, absint( $_POST['stuck_after_minutes'] ?? 15 ) ) ),
@@ -297,6 +344,12 @@ final class Settings_Screen {
 
 		if ( '' !== $submitted_key && ! Settings::key_is_from_constant() ) {
 			$values['google_api_key'] = Encryption::encrypt( sanitize_text_field( $submitted_key ) );
+		}
+
+		$gemini_key = trim( (string) wp_unslash( $_POST['gemini_api_key'] ?? '' ) );
+
+		if ( '' !== $gemini_key && ! Gemini_Client::key_is_from_constant() ) {
+			$values['gemini_api_key'] = Encryption::encrypt( sanitize_text_field( $gemini_key ) );
 		}
 
 		Settings::update( $values );
@@ -425,8 +478,34 @@ final class Settings_Screen {
 			}
 		}
 
+		$gemini = new Gemini_Client();
+
+		if ( $gemini->is_configured() ) {
+			$models = $gemini->models();
+
+			if ( is_wp_error( $models ) ) {
+				$lines[] = '<strong>' . esc_html__( 'Gemini: failed.', 'leadmap' ) . '</strong> '
+					. esc_html( $models->get_error_message() );
+			} else {
+				$chosen = $gemini->model();
+				$has    = in_array( $chosen, $models, true );
+
+				$lines[] = '<strong>' . esc_html(
+					$has ? __( 'Gemini: working.', 'leadmap' ) : __( 'Gemini: key works, but that model does not.', 'leadmap' )
+				) . '</strong> '
+					. esc_html(
+						sprintf(
+							/* translators: 1: chosen model, 2: a few available model names. */
+							__( 'Using "%1$s". Available to this key: %2$s', 'leadmap' ),
+							$chosen,
+							implode( ', ', array_slice( $models, 0, 8 ) )
+						)
+					);
+			}
+		}
+
 		if ( ! $failed ) {
-			$lines[] = esc_html__( 'All three APIs are reachable. You are ready to run a search.', 'leadmap' );
+			$lines[] = esc_html__( 'All three Google APIs are reachable. You are ready to run a search.', 'leadmap' );
 		}
 
 		return implode( '<br />', $lines );

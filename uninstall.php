@@ -16,7 +16,7 @@ if ( ! get_option( 'leadmap_delete_data_on_uninstall' ) ) {
 	return;
 }
 
-$tables = [ 'events', 'lead_emails', 'leads', 'searches' ];
+$tables = [ 'events', 'audits', 'lead_emails', 'leads', 'searches' ];
 
 foreach ( $tables as $table ) {
 	$name = $wpdb->prefix . 'leadmap_' . $table;

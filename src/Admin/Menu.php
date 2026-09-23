@@ -13,10 +13,10 @@ use LeadMap\Admin\Screens\Lead_Detail_Screen;
 use LeadMap\Admin\Screens\Leads_Screen;
 use LeadMap\Admin\Screens\New_Search_Screen;
 use LeadMap\Admin\Screens\Searches_Screen;
+use LeadMap\Admin\Screens\Audit_Screen;
 use LeadMap\Admin\Screens\Settings_Screen;
-use LeadMap\Admin\Screens\Triage_Screen;
+use LeadMap\Audit\Audit_Service;
 use LeadMap\Rest\Rest_Controller;
-use LeadMap\Triage\Triage_Service;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -37,7 +37,7 @@ final class Menu {
 			'leadmap'            => new Leads_Screen(),
 			'leadmap-new-search' => new New_Search_Screen(),
 			'leadmap-searches'   => new Searches_Screen(),
-			'leadmap-triage'     => new Triage_Screen(),
+			'leadmap-audit'      => new Audit_Screen(),
 			'leadmap-settings'   => new Settings_Screen(),
 			'leadmap-lead'       => new Lead_Detail_Screen(),
 		];
@@ -55,7 +55,7 @@ final class Menu {
 		add_submenu_page( self::SLUG, __( 'Leads', 'leadmap' ), __( 'Leads', 'leadmap' ), 'leadmap_manage', 'leadmap', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'New Search', 'leadmap' ), __( 'New Search', 'leadmap' ), 'leadmap_search', 'leadmap-new-search', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'Searches', 'leadmap' ), __( 'Searches', 'leadmap' ), 'leadmap_search', 'leadmap-searches', [ $this, 'render' ] );
-		add_submenu_page( self::SLUG, __( 'Triage', 'leadmap' ), $this->triage_label(), 'leadmap_audit', 'leadmap-triage', [ $this, 'render' ] );
+		add_submenu_page( self::SLUG, __( 'Audit', 'leadmap' ), $this->audit_label(), 'leadmap_audit', 'leadmap-audit', [ $this, 'render' ] );
 		add_submenu_page( self::SLUG, __( 'Settings', 'leadmap' ), __( 'Settings', 'leadmap' ), 'leadmap_settings', 'leadmap-settings', [ $this, 'render' ] );
 
 		// Reachable by URL from the leads list, but not shown as its own menu item.
@@ -123,13 +123,59 @@ final class Menu {
 			$this->enqueue_live();
 		}
 
-		if ( 'leadmap-triage' === $page ) {
-			$this->enqueue_triage();
-		}
-
 		if ( 'leadmap-lead' === $page ) {
 			$this->enqueue_lead();
 		}
+
+		if ( 'leadmap-audit' === $page ) {
+			$this->enqueue_audit();
+		}
+	}
+
+	/** The waiting count in the menu, the way comments show theirs. */
+	private function audit_label(): string {
+		$waiting = ( new Audit_Service() )->queue_size();
+
+		if ( $waiting < 1 ) {
+			return __( 'Audit', 'leadmap' );
+		}
+
+		return sprintf(
+			/* translators: %s: number of leads awaiting audit. */
+			__( 'Audit %s', 'leadmap' ),
+			'<span class="awaiting-mod"><span class="pending-count">' . esc_html( (string) $waiting ) . '</span></span>'
+		);
+	}
+
+	private function enqueue_audit(): void {
+		wp_enqueue_script(
+			'leadmap-audit',
+			LEADMAP_URL . 'src/Admin/assets/audit.js',
+			[],
+			self::asset_version( 'src/Admin/assets/audit.js' ),
+			true
+		);
+
+		wp_localize_script(
+			'leadmap-audit',
+			'leadmapAudit',
+			[
+				'saveUrl'  => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/audit' ),
+				'draftUrl' => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/draft' ),
+				'nextUrl' => admin_url( 'admin.php?page=leadmap-audit' ),
+				'nonce'   => wp_create_nonce( 'wp_rest' ),
+				'i18n'    => [
+					'saving'         => __( 'Saving…', 'leadmap' ),
+					'saved'          => __( 'Saved — loading the next lead', 'leadmap' ),
+					'failed'         => __( 'That could not be saved', 'leadmap' ),
+					'confirmNotAFit' => __( 'Mark this lead as not a fit? It leaves the pipeline and will not be contacted.', 'leadmap' ),
+					'drafting'       => __( 'Drafting from the measurements…', 'leadmap' ),
+					'drafted'        => __( 'Draft written — read it through and edit before saving', 'leadmap' ),
+					'draftNeedsTags' => __( 'Tick the problems first, so the draft knows what to write about.', 'leadmap' ),
+					'draftOverwrite' => __( 'Replace what you have written with a fresh draft?', 'leadmap' ),
+				],
+			]
+		);
 	}
 
 	private function enqueue_worker(): void {
@@ -180,46 +226,6 @@ final class Menu {
 					'savedAs'    => __( 'Saved as %s', 'leadmap' ),
 					'pickOne'    => __( 'Pick at least one verdict first.', 'leadmap' ),
 					'failed'     => __( 'That did not work', 'leadmap' ),
-				],
-			]
-		);
-	}
-
-	/** Show the waiting count in the menu, the way comments do. */
-	private function triage_label(): string {
-		$waiting = ( new Triage_Service() )->queue_size();
-
-		if ( $waiting < 1 ) {
-			return __( 'Triage', 'leadmap' );
-		}
-
-		return sprintf(
-			/* translators: %s: number of leads awaiting triage. */
-			__( 'Triage %s', 'leadmap' ),
-			'<span class="awaiting-mod"><span class="pending-count">' . esc_html( (string) $waiting ) . '</span></span>'
-		);
-	}
-
-	private function enqueue_triage(): void {
-		wp_enqueue_script(
-			'leadmap-triage',
-			LEADMAP_URL . 'src/Admin/assets/triage.js',
-			[],
-			self::asset_version( 'src/Admin/assets/triage.js' ),
-			true
-		);
-
-		wp_localize_script(
-			'leadmap-triage',
-			'leadmapTriage',
-			[
-				'decideUrl' => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/triage' ),
-				'undoUrl'   => rest_url( Rest_Controller::NAMESPACE . '/leads/%d/triage/undo' ),
-				'nonce'     => wp_create_nonce( 'wp_rest' ),
-				'i18n'      => [
-					'saved'  => __( 'Marked as %s', 'leadmap' ),
-					'undone' => __( 'Put back in the queue', 'leadmap' ),
-					'failed' => __( 'Could not save that verdict', 'leadmap' ),
 				],
 			]
 		);
@@ -298,6 +304,7 @@ final class Menu {
 					'failed'   => __( 'Search failed', 'leadmap' ),
 					'lost'     => __( 'Lost contact with the server. Reload to check progress.', 'leadmap' ),
 					'stopped'  => __( 'Search stopped', 'leadmap' ),
+					'stalled'  => __( 'Still searching, but Google has not answered for a while…', 'leadmap' ),
 					'stop'     => __( 'Stop search', 'leadmap' ),
 					'stopping' => __( 'Stopping…', 'leadmap' ),
 					'confirmStop' => __( 'Stop this search? Leads already collected are kept, and you can re-run it later.', 'leadmap' ),

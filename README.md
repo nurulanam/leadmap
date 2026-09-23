@@ -2,18 +2,29 @@
 
 Collect local business leads from Google Maps by industry and ZIP, straight into WP Admin.
 
-Covers **Search → Enrich → Triage → Leads → Export**. The deep audit and outreach arrive in
-later phases; see `../DOCUMENTATION.md` for the full plan.
+Covers **Search → Enrich → Triage → Audit → Leads → Export**. Outreach arrives in Phase 5;
+see `../DOCUMENTATION.md` for the full plan.
 
 ## What works now
 
+**Phase 4 — audit**
+
+- **Audit queue** — one lead at a time, every automated signal beside the form
+- **Ten issue tags**, seeded from the triage verdict so the form opens half-filled
+- **Primary issue** picks which outreach template will be used
+- **Problem note** in your own words, which becomes `{{problem}}` in the email — a throwaway
+  one is refused, because it would produce a message not worth sending
+- **Fit score** (0–100), separate from the opportunity score: how promising the *prospect*
+  is, weighted on reachability, business viability and whether the decision is made locally
+- Keyboard: number keys toggle problems, `Ctrl`+`Enter` saves and loads the next lead
+- **Not a fit** takes a lead out of the pipeline without requiring a write-up
+- **Optional Gemini draft** — a button that writes a first version of the problem note from
+  the measurements already collected. Free tier, separate key, entirely optional
+
 **Phase 3 — triage**
 
-- **Screenshot grid** — desktop and mobile side by side, 12 per page, sorted most-neglected
-  first by staleness score
-- **Keyboard-driven verdicts** — `1`–`7` for Outdated / Broken / Not mobile / Slow / No SSL /
-  Poor SEO / Weak listing (multi-select), `S` skip, `N` no website, `U` unsure, `A` to accept
-  the suggested flags, `Enter` to save and advance, `Ctrl`+`Z` to undo
+- **Seven verdicts** — Outdated / Broken / Not mobile / Slow / No SSL / Poor SEO /
+  Weak listing (multi-select), plus Skip, No website and Unsure — from the lead page
 - **Suggested flags** — the automated checks mark the flags they point at with a dotted
   outline. They are offered, never pre-selected: pre-ticking would turn a judgement into a
   rubber stamp, which is the one thing this stage exists to avoid
@@ -194,12 +205,40 @@ Three settings bound how long a lead can take, so one unresponsive site never st
 The watchdog retries a stalled lead once, then gives up and records why, so a site that accepts
 connections but never responds cannot consume jobs indefinitely.
 
+## The Gemini draft (optional)
+
+The audit screen can draft the problem note for you. It is off unless you add a key, and it
+needs its **own** key — a Gemini key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey),
+not the Google Cloud Maps key. The free tier is enough for this.
+
+Two rules shape the implementation:
+
+**It sees only measured values.** The prompt is assembled from the actual numbers — PageSpeed
+scores, largest-paint timing, missing viewport, plain HTTP, alt-text counts, footer copyright
+year, detected jQuery version — and the instructions forbid introducing any others. A cold
+email whose one specific claim is invented is worse than no email: that claim is the thing the
+recipient can check, and the pitch rests on it being true. A lead with nothing measured is
+refused rather than guessed at.
+
+**It drafts, you decide.** The text lands in the textarea for editing and is never saved until
+you save it. It will not overwrite something you have already written without asking.
+
+## Two scores, and why they differ
+
+**Opportunity** (0–100) measures how much is wrong with the website. **Fit** (0–100) measures
+how promising the business is as a prospect. They are not the same thing, and conflating them
+wastes time: a catastrophic site belonging to a dormant business you cannot email is a poor
+prospect however much work it needs, while a moderately dated site belonging to a busy firm
+you can reach by name is a good one.
+
+Triage and the opportunity score sort *what to look at*. Fit sorts *who to write to*.
+
 ## Triage
 
-The deep audit takes minutes per lead. Running it on a business whose site is already modern
-is wasted effort — there is no problem to sell against. Triage is a cheap filter in front of an
+The audit takes minutes per lead. Running it on a business whose site is already modern is
+wasted effort — there is no problem to sell against. Triage is a cheap filter in front of an
 expensive one, and it is a **hard gate**: a lead that fails it leaves the pipeline and costs
-nothing further.
+nothing further. It happens on the lead page; there is no separate screen.
 
 Verdicts 1–4 are multi-select, because a site can be both outdated and broken, and they seed
 the deep audit's issue tags so it starts half-filled rather than blank.

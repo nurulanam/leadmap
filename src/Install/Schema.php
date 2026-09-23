@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
 final class Schema {
 
 	/** Bumped whenever a table definition below changes. */
-	public const DB_VERSION = 6;
+	public const DB_VERSION = 7;
 
 	public static function table( string $name ): string {
 		global $wpdb;
@@ -124,6 +124,27 @@ final class Schema {
 			PRIMARY KEY  (id),
 			UNIQUE KEY lead_email (lead_id, email),
 			KEY email (email)
+		) $collate;";
+
+		$tables['audits'] = "CREATE TABLE " . self::table( 'audits' ) . " (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			lead_id BIGINT UNSIGNED NOT NULL,
+			verified_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			verified_at DATETIME NULL,
+			is_reachable TINYINT(1) NOT NULL DEFAULT 0,
+			issue_tags VARCHAR(255) NOT NULL DEFAULT '',
+			primary_issue VARCHAR(50) NOT NULL DEFAULT '',
+			problem_notes TEXT NULL,
+			evidence_json LONGTEXT NULL,
+			fit_score TINYINT UNSIGNED NULL,
+			fit_override TINYINT UNSIGNED NULL,
+			outcome VARCHAR(20) NOT NULL DEFAULT 'audited',
+			created_at DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+			updated_at DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
+			PRIMARY KEY  (id),
+			UNIQUE KEY lead_id (lead_id),
+			KEY primary_issue (primary_issue),
+			KEY fit_score (fit_score)
 		) $collate;";
 
 		$tables['events'] = "CREATE TABLE " . self::table( 'events' ) . " (
